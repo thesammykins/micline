@@ -1,4 +1,5 @@
 import AudioSupport
+import Combine
 import Foundation
 import Testing
 @testable import MicLineCore
@@ -110,4 +111,86 @@ import Testing
 
     meter.reset()
     #expect(meter.reading == .silence)
+}
+
+@Test @MainActor func meterDisplayPublishesBothChannelsOnceAndSkipsUnchangedReadings() {
+    let display = MeterDisplay()
+    var updates: [MeterReadings] = []
+    let subscription = display.$readings.dropFirst().sink { updates.append($0) }
+    defer { subscription.cancel() }
+
+    let input = MeterReading(rmsDBFS: -37, samplePeakDBFS: -14, heldSamplePeakDBFS: -12, clipped: false)
+    let output = MeterReading(rmsDBFS: -52, samplePeakDBFS: -7, heldSamplePeakDBFS: -5, clipped: true)
+    let active = MeterReadings(input: input, output: output, inputSignalMissing: false)
+    display.update(active)
+    display.update(active)
+    #expect(updates == [active])
+
+    let missing = MeterReadings(input: input, output: output, inputSignalMissing: true)
+    display.update(missing)
+    display.update(.silence)
+    #expect(updates == [active, missing, .silence])
+}
+
+@Test @MainActor func meterUpdatesDoNotInvalidateTheWholeGraph() {
+    let graph = AudioGraph(defaults: UserDefaults(suiteName: "micline.meter-test.\(UUID())")!)
+    var graphUpdates = 0
+    let subscription = graph.objectWillChange.sink { graphUpdates += 1 }
+    defer { subscription.cancel() }
+
+    let input = MeterReading(rmsDBFS: -25, samplePeakDBFS: -10, heldSamplePeakDBFS: -8, clipped: false)
+    let output = MeterReading(rmsDBFS: -41, samplePeakDBFS: -21, heldSamplePeakDBFS: -18, clipped: false)
+    graph.meterDisplay.update(MeterReadings(input: input, output: output, inputSignalMissing: false))
+
+    #expect(graphUpdates == 0)
+    #expect(graph.inputDB == -25)
+    #expect(graph.outputDB == -41)
+    #expect(graph.inputLevel == input)
+    #expect(graph.outputLevel == output)
+    graph.stop()
+    #expect(graph.inputLevel == .silence)
+}
+
+@Test func meterBallisticsUsesRealElapsedTimeAcrossIrregularPolls() {
+    var meter = MeterBallistics()
+    _ = meter.update(rms: Float(1 / sqrt(2.0)), samplePeak: 1, elapsed: 0.03)
+    let afterShort = meter.update(rms: 0, samplePeak: 0, elapsed: 0.04)
+    #expect(abs(afterShort.rmsDBFS + 0.4704) < 0.000_001)
+    #expect(afterShort.heldSamplePeakDBFS == 0)
+    #expect(afterShort.clipped)
+
+    let afterDelay = meter.update(rms: 0, samplePeak: 0, elapsed: 1.17)
+    #expect(abs(afterDelay.rmsDBFS + 14.2296) < 0.000_001)
+    #expect(abs(afterDelay.heldSamplePeakDBFS + 2.4696) < 0.000_001)
+    #expect(!afterDelay.clipped)
+}
+
+@Test func deviceScanKeepsTwoSecondWallClockCadenceWhenMeterRateChanges() {
+    var schedule = DeviceScanSchedule(now: 100)
+    let before = schedule.isDue(now: 101.99)
+    let first = schedule.isDue(now: 102)
+    let shortlyAfter = schedule.isDue(now: 102.5)
+    let beforeNext = schedule.isDue(now: 103.99)
+    let second = schedule.isDue(now: 104.1)
+    let shortlyAfterSecond = schedule.isDue(now: 104.2)
+    #expect(!before)
+    #expect(first)
+    #expect(!shortlyAfter)
+    #expect(!beforeNext)
+    #expect(second)
+    #expect(!shortlyAfterSecond)
+}
+
+@Test @MainActor func meterTimerFiresDuringEventTrackingWithoutDefaultModeTimer() {
+    var commonTicks = 0
+    var defaultTicks = 0
+    let common = Timer(timeInterval: 0.01, repeats: true) { _ in commonTicks += 1 }
+    let normal = Timer(timeInterval: 0.01, repeats: true) { _ in defaultTicks += 1 }
+    AudioGraph.scheduleMeterTimer(common)
+    RunLoop.main.add(normal, forMode: .default)
+    defer { common.invalidate(); normal.invalidate() }
+
+    _ = RunLoop.main.run(mode: .eventTracking, before: Date().addingTimeInterval(0.1))
+    #expect(commonTicks > 0)
+    #expect(defaultTicks == 0)
 }

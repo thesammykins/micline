@@ -181,17 +181,14 @@ struct MainView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 routeSection
-                MeterPanel(input: graph.inputLevel, output: graph.outputLevel)
+                LiveMeterPanel(display: graph.meterDisplay)
                 controlsSection
                 effectsSection
                 if let issue = graph.routeIssue {
                     Label(issue, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout).foregroundStyle(.orange)
                 }
-                if graph.running && graph.inputFrames > 48_000 && graph.inputLevel.rmsDBFS <= -90 {
-                    Label("No microphone signal. If your MacBook lid is closed, open it.", systemImage: "mic.slash")
-                        .font(.callout).foregroundStyle(.orange)
-                }
+                MeterSignalWarning(display: graph.meterDisplay, running: graph.running)
                 Text(displayStatus)
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }

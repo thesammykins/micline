@@ -15,11 +15,15 @@ public final class AudioGraph: ObservableObject {
     @Published public private(set) var loading = false
     @Published public var bypass = false { didSet { applyControls() } }
     @Published public private(set) var status = "Choose an input and output, then start."
-    @Published public private(set) var inputDB: Double = -90
-    @Published public private(set) var outputDB: Double = -90
-    @Published public private(set) var outputPeak: Float = 0
-    @Published public private(set) var inputLevel = MeterReading.silence
-    @Published public private(set) var outputLevel = MeterReading.silence
+    public let meterDisplay = MeterDisplay()
+    public var inputDB: Double { meterDisplay.readings.input.rmsDBFS }
+    public var outputDB: Double { meterDisplay.readings.output.rmsDBFS }
+    public var outputPeak: Float {
+        let peak = meterDisplay.readings.output.samplePeakDBFS
+        return peak <= -90 ? 0 : Float(pow(10, peak / 20))
+    }
+    public var inputLevel: MeterReading { meterDisplay.readings.input }
+    public var outputLevel: MeterReading { meterDisplay.readings.output }
     @Published public private(set) var formatDescription = "Audio is stopped"
     @Published public var genericEditorID: UUID?
     public let diagnostics = DiagnosticLog()
@@ -42,7 +46,7 @@ public final class AudioGraph: ObservableObject {
     private var terminationObserver: NSObjectProtocol?
     private var generation = 0
     private let defaults: UserDefaults
-    private var pollCount = 0
+    private var deviceScan = DeviceScanSchedule(now: ProcessInfo.processInfo.systemUptime)
     private var usesDefaultRoute = false
 
     public init(defaults: UserDefaults = .standard) {
@@ -53,12 +57,20 @@ public final class AudioGraph: ObservableObject {
         } else { settings = SessionSettings() }
         refresh()
         diagnostics.record(.appOpened)
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        let meterTimer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
         }
+        Self.scheduleMeterTimer(meterTimer)
+        timer = meterTimer
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.stop() }
         }
+    }
+
+    static func scheduleMeterTimer(_ timer: Timer) {
+        RunLoop.main.add(timer, forMode: .common)
+        // Event tracking is not guaranteed to be a common mode in every run loop.
+        RunLoop.main.add(timer, forMode: .eventTracking)
     }
 
     deinit {
@@ -171,10 +183,8 @@ public final class AudioGraph: ObservableObject {
         outputMeter.reset()
         inputBallistics.reset()
         outputBallistics.reset()
-        inputLevel = .silence
-        outputLevel = .silence
+        meterDisplay.update(.silence)
         lastMeterPoll = ProcessInfo.processInfo.systemUptime
-        inputDB = -90; outputDB = -90; outputPeak = 0
         formatDescription = "Audio is stopped"
         status = stateError ?? message
     }
@@ -436,18 +446,15 @@ public final class AudioGraph: ObservableObject {
         let now = ProcessInfo.processInfo.systemUptime
         if running {
             let elapsed = max(0, now - lastMeterPoll)
-            inputLevel = inputBallistics.update(rms: inputMeter.rms,
+            let input = inputBallistics.update(rms: inputMeter.rms,
                 samplePeak: inputMeter.takePeak(), elapsed: elapsed)
-            outputLevel = outputBallistics.update(rms: outputMeter.rms,
+            let output = outputBallistics.update(rms: outputMeter.rms,
                 samplePeak: outputMeter.takePeak(), elapsed: elapsed)
-            inputDB = inputLevel.rmsDBFS
-            outputDB = outputLevel.rmsDBFS
-            outputPeak = outputLevel.samplePeakDBFS <= -90
-                ? 0 : Float(pow(10, outputLevel.samplePeakDBFS / 20))
+            meterDisplay.update(MeterReadings(input: input, output: output,
+                inputSignalMissing: inputMeter.frames > 48_000 && input.rmsDBFS <= -90))
         }
         lastMeterPoll = now
-        pollCount += 1
-        if pollCount % 20 == 0 {
+        if deviceScan.isDue(now: now) {
             let updated = DeviceRegistry.devices()
             if running && usesDefaultRoute && (selectedInput?.id != DeviceRegistry.defaultDevice(input: true) || selectedOutput?.id != DeviceRegistry.defaultDevice(input: false)) {
                 diagnostics.record(.configurationChanged)

@@ -4,10 +4,10 @@
 Initial repository: empty, unborn local `master`, no source or project guidance. Toolchain: Xcode 27.0 build 27A5237l, macOS SDK 27.0, Swift 6.4, arm64 macOS 27.0 on Apple M3 Pro. No remote baseline exists.
 
 ## Proposed changes
-- SwiftPM builds a native SwiftUI executable; the bundle script supplies LSUIElement, durable ID `com.sammy.micline`, microphone usage description and audio-input entitlement. Sign using the existing Apple Development identity, with an environment override and no ad-hoc fallback. No external package dependencies.
+- SwiftPM builds a native SwiftUI executable; the bundle script supplies LSUIElement, durable ID `com.sammy.micline`, microphone usage description and audio-input entitlement. Signing requires an explicitly approved certificate fingerprint, with no implicit or ad-hoc fallback. Distribution requires a new MicLine-specific Developer ID identity; other products' signing material must not be reused. Sparkle is the update framework dependency.
 - Core Audio enumerates device streams and stable UIDs. AVAudioEngine I/O nodes share one AUHAL on this runner. Use Apple's internal aggregate for the current default pair, set CurrentDevice once for a same-device route, or create a process-private aggregate for an input-only mono physical mic and stereo virtual output at equal nominal rates. Other split pairs are rejected. Never mutate global defaults. Snapshot defaults consistently, recheck after asynchronous loading, and stop on reconfiguration.
 - Graph: selected microphone → input meter → gain mixer → high-pass EQ → ordered Apple Audio Units → output meter/main mixer → selected output. Bypass uses effect bypass properties. AVAudioEngine owns conversion; actual device rates/buffers are reported rather than promised.
-- C11 atomic meter state is preallocated; taps only traverse float samples and publish atomics. No UI dispatch, locks, filesystem work, or heap allocation in our meter callback. Main-actor polling reads snapshots at 10 Hz. Apple/plugin internals are outside this guarantee.
+- C11 atomic meter state is preallocated; taps only traverse float samples and publish atomics. No UI dispatch, locks, filesystem work, or heap allocation in our meter callback. Main-actor polling targets 30 Hz in common and event-tracking run-loop modes. Apple/plugin internals are outside this guarantee.
 - Plugin registry metadata is scanned without instantiating VST binaries. VST extension matches are explicitly unvalidated filesystem candidates. AU hosting requests Apple's out-of-process option where supported; AUv2 is still in-process. VST3 requires an Objective-C++/C++ SDK bridge. SDK 3.8 uses MIT, but its advertised tested toolchains stop before macOS/Xcode 27; compatibility has not been tested here, not proven impossible. VST2 SDK is discontinued and cannot simply be downloaded for a new host. Unsupported records remain visible.
 - A native app cannot become a Core Audio input merely by creating an AVAudioEngine. BlackHole 2ch 0.7.1 was separately installed on this runner with explicit user approval. MicLine does not install/bundle it or publish a MicLine device. Global input/output defaults were not changed.
 - Main actor owns graph mutation. Device/configuration changes stop graph; device lists poll every two seconds. Persist settings in UserDefaults with bounded validation on restore. AU fullStateForDocument saves on Stop/quit, up to 1 MiB per effect; actual AUHipass state round-trip passes. Generation tokens reject stale loads; cancellation checks after permission/plugin awaits prevent delayed starts. There is no plugin timeout/quarantine or hot failover to a dry stream yet.
@@ -28,7 +28,7 @@ Explicit monitoring extends the aggregate to [mic, virtual output, physical ster
 peak, and a clip latch. For finite normalized Float32 samples, sample peak is the
 maximum absolute sample across every channel since the previous UI consume;
 sample-peak dBFS is `20 × log10(peak)`, floored at −90 dBFS. C11 atomic maximum
-accumulation and exchange preserve a brief callback peak until the 10 Hz reader
+accumulation and exchange preserve a brief callback peak until the UI reader
 consumes it. This is not interpolated true peak and must never be labeled dBTP.
 
 Each callback calculates RMS independently per channel over finite samples, then
@@ -44,6 +44,13 @@ second; values immediately below 1 do not clip. Reset clears accumulation,
 ballistics and clip state. Green below −18, orange from −18 to below −9, and red
 from −9 dBFS are MicLine headroom cues using EBU landmarks, not EBU compliance.
 Neither the polling period nor these display ballistics measure audio latency.
+
+Input/output readings and the missing-input warning publish as one changed-only
+snapshot on `MeterDisplay`. Meter updates do not publish graph changes or require
+the main route/effects view to observe each sample. Device enumeration keeps its
+two-second wall-clock cadence independently of meter polling. The 30 Hz target is
+not a measured visible frame rate: live before/after recording, menu/slider
+tracking, layout cost and display-refresh validation remain pending.
 
 Deterministic tests cover asymmetric channel aggregation, planar/interleaved
 buffers, a transient followed by quiet samples before consume, exact band/clip

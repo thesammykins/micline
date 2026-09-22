@@ -122,3 +122,23 @@ struct MeterPanel: View {
         .environment(\.colorScheme, .dark)
     }
 }
+
+struct LiveMeterPanel: View {
+    @ObservedObject var display: MeterDisplay
+
+    var body: some View {
+        MeterPanel(input: display.readings.input, output: display.readings.output)
+    }
+}
+
+struct MeterSignalWarning: View {
+    @ObservedObject var display: MeterDisplay
+    let running: Bool
+
+    var body: some View {
+        if running && display.readings.inputSignalMissing {
+            Label("No microphone signal. If your MacBook lid is closed, open it.", systemImage: "mic.slash")
+                .font(.callout).foregroundStyle(.orange)
+        }
+    }
+}

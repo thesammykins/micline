@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 public enum MeterBand: Sendable {
     case green
@@ -33,6 +34,41 @@ public struct MeterReading: Equatable, Sendable {
 
     public static let silence = MeterReading(rmsDBFS: -90, samplePeakDBFS: -90,
         heldSamplePeakDBFS: -90, clipped: false)
+}
+
+public struct MeterReadings: Equatable, Sendable {
+    public let input: MeterReading
+    public let output: MeterReading
+    public let inputSignalMissing: Bool
+
+    public init(input: MeterReading, output: MeterReading, inputSignalMissing: Bool) {
+        self.input = input
+        self.output = output
+        self.inputSignalMissing = inputSignalMissing
+    }
+
+    public static let silence = MeterReadings(input: .silence, output: .silence, inputSignalMissing: false)
+}
+
+@MainActor
+public final class MeterDisplay: ObservableObject {
+    @Published public private(set) var readings = MeterReadings.silence
+
+    func update(_ next: MeterReadings) {
+        if readings != next { readings = next }
+    }
+}
+
+struct DeviceScanSchedule {
+    private var lastScan: Double
+
+    init(now: Double) { lastScan = now }
+
+    mutating func isDue(now: Double) -> Bool {
+        guard now - lastScan >= 2 else { return false }
+        lastScan = now
+        return true
+    }
 }
 
 struct MeterBallistics {
