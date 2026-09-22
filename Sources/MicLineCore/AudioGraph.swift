@@ -417,6 +417,8 @@ public final class AudioGraph: ObservableObject {
     }
 
     static func prepareForEditor(_ unit: AVAudioUnit) throws {
+        // Detached stopped units have not been prepared by an engine. Native
+        // editors can depend on render resources even when no audio is running.
         try unit.withAUAudioUnit {
             if !$0.renderResourcesAllocated { try $0.allocateRenderResources() }
         }
