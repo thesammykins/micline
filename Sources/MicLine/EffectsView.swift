@@ -14,7 +14,7 @@ struct EffectRow: View {
             Text(String(format: "%02d", index + 1)).monospacedDigit().foregroundStyle(.secondary).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).lineLimit(1).foregroundStyle(effect.bypassed || graph.bypass ? .secondary : .primary)
-                Text(effect.bypassed ? "Audio Unit · Bypassed" : "Audio Unit · Enabled")
+                Text(statusText)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
@@ -25,15 +25,23 @@ struct EffectRow: View {
             }))
             .labelsHidden().toggleStyle(.switch).controlSize(.small)
             Button { graph.move(effect.id, by: -1) } label: { Image(systemName: "arrow.up") }
-                .disabled(index == 0).help("Move up")
+                .disabled(index == 0).help("Move \(name) up")
+                .accessibilityLabel("Move \(name) up")
             Button { graph.move(effect.id, by: 1) } label: { Image(systemName: "arrow.down") }
-                .disabled(index == graph.settings.effects.count - 1).help("Move down")
+                .disabled(index == graph.settings.effects.count - 1).help("Move \(name) down")
+                .accessibilityLabel("Move \(name) down")
             Button("Controls") { graph.openEditor(effect.id) }.disabled(graph.loading)
             Button(role: .destructive) { graph.remove(effect.id) } label: { Image(systemName: "minus") }
                 .help("Remove \(name)")
+                .accessibilityLabel("Remove \(name)")
         }
         .buttonStyle(.bordered)
         .padding(.vertical, 10)
+    }
+
+    private var statusText: String {
+        if graph.bypass { return "Audio Unit · Bypassed by chain" }
+        return effect.bypassed ? "Audio Unit · Bypassed" : "Audio Unit · Enabled"
     }
 }
 
@@ -162,7 +170,7 @@ struct GenericAUControlsView: View {
             } else {
                 HStack {
                     Text(format(parameter.minValue, parameter: parameter)).font(.caption).foregroundStyle(.secondary)
-                    Slider(value: valueBinding(parameter), in: parameter.minValue...parameter.maxValue)
+                    Slider(value: displayBinding(parameter), in: 0...1)
                         .disabled(!writable)
                     Text(format(parameter.maxValue, parameter: parameter)).font(.caption).foregroundStyle(.secondary)
                 }
@@ -185,7 +193,64 @@ struct GenericAUControlsView: View {
     }
 
     private func format(_ value: AUValue, parameter: AUParameter) -> String {
-        let suffix = parameter.unitName.map { " \($0)" } ?? ""
-        return String(format: "%+.3f", value) + suffix
+        if parameter.flags.contains(.flag_ValuesHaveStrings) {
+            var suppliedValue = value
+            let supplied = parameter.string(fromValue: &suppliedValue)
+            if !supplied.isEmpty { return supplied }
+        }
+        return String(format: "%+.3f", value)
+    }
+
+    private func displayBinding(_ parameter: AUParameter) -> Binding<Double> {
+        Binding(get: {
+            let naturalLower = Double(parameter.minValue)
+            let naturalUpper = Double(parameter.maxValue)
+            let naturalValue = Double(parameter.value)
+            let lower = transformed(Double(parameter.minValue), flags: parameter.flags)
+            let upper = transformed(Double(parameter.maxValue), flags: parameter.flags)
+            guard naturalValue.isFinite else { return 0 }
+            guard lower.isFinite, upper.isFinite, upper != lower else {
+                return min(1, max(0, (naturalValue - naturalLower) / (naturalUpper - naturalLower)))
+            }
+            let value = transformed(naturalValue, flags: parameter.flags)
+            guard value.isFinite else { return 0 }
+            return min(1, max(0, (value - lower) / (upper - lower)))
+        }, set: { position in
+            let naturalLower = Double(parameter.minValue)
+            let naturalUpper = Double(parameter.maxValue)
+            let lower = transformed(Double(parameter.minValue), flags: parameter.flags)
+            let upper = transformed(Double(parameter.maxValue), flags: parameter.flags)
+            guard lower.isFinite, upper.isFinite, upper != lower else {
+                parameter.value = AUValue(naturalLower + min(1, max(0, position)) * (naturalUpper - naturalLower))
+                return
+            }
+            let displayed = lower + min(1, max(0, position)) * (upper - lower)
+            let value = inverseTransformed(displayed, flags: parameter.flags)
+            parameter.value = AUValue(min(naturalUpper, max(naturalLower, value)))
+        })
+    }
+
+    private func transformed(_ value: Double, flags: AudioUnitParameterOptions) -> Double {
+        switch flags.intersection(.flag_DisplayMask) {
+        case .flag_DisplaySquareRoot: return value.sign == .minus ? -sqrt(abs(value)) : sqrt(value)
+        case .flag_DisplaySquared: return value.sign == .minus ? -(value * value) : value * value
+        case .flag_DisplayCubed: return value * value * value
+        case .flag_DisplayCubeRoot: return value.sign == .minus ? -pow(abs(value), 1.0 / 3.0) : pow(value, 1.0 / 3.0)
+        case .flag_DisplayExponential: return exp(value)
+        case .flag_DisplayLogarithmic: return log(max(value, 0.00001))
+        default: return value
+        }
+    }
+
+    private func inverseTransformed(_ value: Double, flags: AudioUnitParameterOptions) -> Double {
+        switch flags.intersection(.flag_DisplayMask) {
+        case .flag_DisplaySquareRoot: return value.sign == .minus ? -(value * value) : value * value
+        case .flag_DisplaySquared: return value.sign == .minus ? -sqrt(abs(value)) : sqrt(value)
+        case .flag_DisplayCubed: return value.sign == .minus ? -pow(abs(value), 1.0 / 3.0) : pow(value, 1.0 / 3.0)
+        case .flag_DisplayCubeRoot: return value * value * value
+        case .flag_DisplayExponential: return log(max(value, 0.00001))
+        case .flag_DisplayLogarithmic: return exp(value)
+        default: return value
+        }
     }
 }
