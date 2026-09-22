@@ -1,0 +1,85 @@
+name: Validate release tooling
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Resources/**"
+  push:
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "Sources/**"
+      - "Tests/**"
+      - "Package.swift"
+      - "Resources/**"
+
+permissions:
+  contents: read
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install pinned actionlint and ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Validate workflows, shell, and property lists
+        run: |
+          actionlint
+          bash -n scripts/build.sh scripts/package-dmg.sh
+          shellcheck scripts/build.sh scripts/package-dmg.sh
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          for path in (Path("Resources/Info.plist"), Path("Resources/MicLine.entitlements")):
+              with path.open("rb") as stream:
+                  plistlib.load(stream)
+              print(f"valid plist: {path}")
+          PY
+
+      - name: Confirm release workflows remain artifact-only
+        run: |
+          if grep -REn --include='*.yml' --include='*.yaml' \
+            '(^|[[:space:]])(gh release|npm publish|swift package-registry publish|docker push)([[:space:]]|$)' \
+            .github/workflows; then
+            echo "Publishing command found in artifact-only workflows" >&2
+            exit 1
+          fi
+
+  build-test:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Assert hosted image contract
+        run: |
+          [[ "$(uname -s)" == "Darwin" ]]
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(sw_vers -productVersion | cut -d. -f1)" -ge 27 ]]
+          xcodebuild -version
+          [[ "$(xcodebuild -version | awk 'NR == 1 { print $2 }' | cut -d. -f1)" -ge 27 ]]
+          [[ "$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)" -ge 27 ]]
+          ./scripts/build.sh --check-environment
+
+      - name: Build and test without signing credentials
+        run: |
+          sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+          swift build -c release --sdk "$sdk_path"
+          swift test --sdk "$sdk_path"
+          swiftc -typecheck scripts/generate-dmg-background.swift

@@ -1,0 +1,6 @@
+# actionlint 1.7.7 predates GitHub's xcode-27 hosted public-preview label.
+# Ignore only that stale-label diagnostic; all other workflow checks remain on.
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      - 'label "xcode-27" is unknown'
