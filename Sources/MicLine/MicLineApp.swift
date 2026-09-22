@@ -341,6 +341,7 @@ struct ProcessingState: View {
     var body: some View {
         Label(graph.loading ? "Starting…" : graph.running ? (graph.bypass ? "Bypassed" : "Processing") : "Stopped",
               systemImage: graph.running ? "circle.fill" : "circle")
+            .labelStyle(.titleAndIcon)
             .font(.callout)
             .foregroundStyle(graph.running ? Color.green : Color.secondary)
             .padding(.horizontal, 12).padding(.vertical, 6)
@@ -360,6 +361,7 @@ struct StartButton: View {
             else { Task { await graph.start() } }
         } label: {
             Label(graph.loading ? "Cancel" : graph.running ? "Stop" : "Start", systemImage: graph.running ? "stop.fill" : "play.fill")
+                .labelStyle(.titleAndIcon)
         }
         .buttonStyle(.borderedProminent)
         .tint(graph.running ? .red : .accentColor)
