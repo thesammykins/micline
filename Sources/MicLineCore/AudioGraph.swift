@@ -11,6 +11,7 @@ public final class AudioGraph: ObservableObject {
     @Published public var plugins: [PluginRecord] = []
     @Published public var settings: SessionSettings { didSet { save(); applyControls() } }
     @Published public private(set) var running = false
+    @Published public private(set) var monitoring = false
     @Published public private(set) var loading = false
     @Published public var bypass = false { didSet { applyControls() } }
     @Published public private(set) var status = "Choose an input and output, then start."
@@ -133,6 +134,7 @@ public final class AudioGraph: ObservableObject {
         editors.removeAll()
         genericEditorID = nil
         running = false
+        monitoring = false
         inputMeter.reset()
         outputMeter.reset()
         inputDB = -90; outputDB = -90; outputPeak = 0
@@ -141,6 +143,31 @@ public final class AudioGraph: ObservableObject {
     }
 
     public func start(mutePhysicalOutput: Bool = false, referenceCapture: ProbeCapture? = nil) async {
+        guard canStart, !running, !Task.isCancelled else { return }
+        await startGraph(mutePhysicalOutput: mutePhysicalOutput, referenceCapture: referenceCapture, monitor: nil)
+    }
+
+    // The caller must obtain explicit user confirmation for the named physical
+    // output immediately before invoking this method because acoustic feedback
+    // is possible. Monitoring is never restored by normal start or persistence.
+    public func startMonitoring(outputUID: String) async {
+        guard !loading, let input = selectedInput, let output = selectedOutput,
+              let monitor = devices.first(where: { $0.uid == outputUID }) else {
+            status = "The selected monitoring output is unavailable."
+            return
+        }
+        do { _ = try PrivateAudioRoutePlan(input: input, output: output, monitor: monitor) }
+        catch { status = error.localizedDescription; return }
+        stop(message: "Restarting with monitoring…")
+        await startGraph(mutePhysicalOutput: false, referenceCapture: nil, monitor: monitor)
+    }
+
+    public func stopMonitoring() {
+        guard monitoring || loading else { return }
+        stop(message: "Monitoring stopped. Start processing again when ready.")
+    }
+
+    private func startGraph(mutePhysicalOutput: Bool, referenceCapture: ProbeCapture?, monitor: AudioDevice?) async {
         guard canStart, !running, !Task.isCancelled else { return }
         if let routeIssue { status = routeIssue; return }
         stop()
@@ -160,7 +187,9 @@ public final class AudioGraph: ObservableObject {
         do {
             let defaultInput = DeviceRegistry.defaultDevice(input: true)
             let defaultOutput = DeviceRegistry.defaultDevice(input: false)
-            guard DeviceRegistry.supportsRoute(input: input.id, output: output.id, defaultInput: defaultInput, defaultOutput: defaultOutput) || PrivateAudioRoute.supports(input: input, output: output) else {
+            guard (monitor == nil && DeviceRegistry.supportsRoute(input: input.id, output: output.id,
+                defaultInput: defaultInput, defaultOutput: defaultOutput)) ||
+                PrivateAudioRoute.supports(input: input, output: output) else {
                 throw GraphError.message("Audio defaults changed. Choose the current default pair or one duplex device.")
             }
             let graph = AVAudioEngine()
@@ -170,11 +199,11 @@ public final class AudioGraph: ObservableObject {
             defer { withExtendedLifetime(route) { if !graph.isRunning { graph.stop() } } }
             // The default engine can use Apple's private aggregate for the default I/O pair.
             // Reassigning that AUHAL to a one-direction-only device is invalid (-10851).
-            usesDefaultRoute = input.id == defaultInput && output.id == defaultOutput
+            usesDefaultRoute = monitor == nil && input.id == defaultInput && output.id == defaultOutput
             if !usesDefaultRoute {
                 _ = graph.inputNode
-                if input.id != output.id {
-                    let aggregate = try PrivateAudioRoute(input: input, output: output)
+                if input.id != output.id || monitor != nil {
+                    let aggregate = try PrivateAudioRoute(input: input, output: output, monitor: monitor)
                     route = aggregate
                     try graph.inputNode.withAudioUnit {
                         try setDevice(aggregate.id, on: $0)
@@ -221,6 +250,13 @@ public final class AudioGraph: ObservableObject {
             graph.attach(outputMeterNode)
             try graph.connectNode(previous, to: outputMeterNode, format: format)
             try graph.connectNode(outputMeterNode, to: graph.mainMixerNode, format: format)
+            if monitor != nil {
+                guard let stereo = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 2) else {
+                    throw GraphError.message("Monitoring has no valid stereo client format.")
+                }
+                try graph.connectNode(graph.mainMixerNode, to: graph.outputNode, format: stereo)
+                try graph.outputNode.withAudioUnit { try route?.configureOutputs(on: $0) }
+            }
             graph.mainMixerNode.outputVolume = mutePhysicalOutput ? 0 : 1
             let inMeter = inputMeter, outMeter = outputMeter
             try graph.inputNode.installAudioTap(onBus: 0, bufferSize: 256, format: format) { buffer, time in
@@ -235,7 +271,11 @@ public final class AudioGraph: ObservableObject {
             applyControls()
             graph.prepare()
             if let privateRoute {
-                try graph.inputNode.withAudioUnit { try privateRoute.verifyMicrophone(on: $0) }
+                try graph.inputNode.withAudioUnit { inputUnit in
+                    try graph.outputNode.withAudioUnit { outputUnit in
+                        try privateRoute.verifyMaps(inputUnit: inputUnit, outputUnit: outputUnit)
+                    }
+                }
             }
             try Task.checkCancellation()
             if usesDefaultRoute && (input.id != DeviceRegistry.defaultDevice(input: true) || output.id != DeviceRegistry.defaultDevice(input: false)) {
@@ -243,8 +283,11 @@ public final class AudioGraph: ObservableObject {
             }
             try graph.start()
             running = true; loading = false
+            monitoring = monitor != nil
             formatDescription = "\(Int(format.sampleRate)) Hz · input buffer \(input.bufferFrames) frames · \(format.channelCount) ch"
-            status = mutePhysicalOutput ? "Diagnostic processing · physical output muted" : output.isVirtual ? "Processing to \(output.name). Verify its loopback input in your call app." : "Monitoring to \(output.name). Use headphones to avoid feedback."
+            status = mutePhysicalOutput ? "Diagnostic processing · physical output muted" : monitor.map {
+                "Processing to \(output.name) and monitoring on \($0.name). Use headphones to avoid feedback."
+            } ?? (output.isVirtual ? "Processing to \(output.name). Verify its loopback input in your call app." : "Monitoring to \(output.name). Use headphones to avoid feedback.")
             observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: graph, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.generation == token else { return }
@@ -322,6 +365,10 @@ public final class AudioGraph: ObservableObject {
             }
             if running && (!updated.contains { $0.uid == settings.inputUID && $0.inputChannels > 0 } || !updated.contains { $0.uid == settings.outputUID && $0.outputChannels > 0 }) {
                 stop(message: "A selected device disconnected. Reconnect it or choose another device.")
+            }
+            if running, let monitorUID = privateRoute?.monitorUID,
+               !updated.contains(where: { $0.uid == monitorUID && !$0.isVirtual && $0.outputChannels == 2 }) {
+                stop(message: "The monitoring output disconnected. Check devices and start again.")
             }
             if updated != devices { devices = updated }
         }

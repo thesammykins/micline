@@ -85,6 +85,57 @@ import AVFoundation
     #expect(!PrivateAudioRoute.supports(input: mic, output: loopback))
 }
 
+@Test func privateRoutePlansExplicitStereoMonitoringWithoutChangingVirtualGain() throws {
+    let mic = AudioDevice(id: 17, uid: "mic", name: "Mic", inputChannels: 1,
+        outputChannels: 0, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
+    let loopback = AudioDevice(id: 41, uid: "loopback", name: "Loopback", inputChannels: 2,
+        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: true)
+    let speakers = AudioDevice(id: 29, uid: "speakers", name: "Speakers", inputChannels: 0,
+        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
+
+    let plan = try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: speakers)
+
+    #expect(plan.memberUIDs == ["mic", "loopback", "speakers"])
+    #expect(plan.mainUID == "loopback")
+    #expect(plan.driftByUID == ["mic": 1, "loopback": 0, "speakers": 1])
+    #expect(plan.microphoneChannel == 0)
+    #expect(plan.outputChannelMap == [0, 1, 0, 1])
+}
+
+@Test func privateRouteMonitoringRejectsUnsafeTopology() {
+    let mic = AudioDevice(id: 17, uid: "mic", name: "Mic", inputChannels: 1,
+        outputChannels: 0, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
+    let loopback = AudioDevice(id: 41, uid: "loopback", name: "Loopback", inputChannels: 2,
+        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: true)
+    var monitor = AudioDevice(id: 29, uid: "speakers", name: "Speakers", inputChannels: 0,
+        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
+
+    monitor.outputChannels = 1
+    #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
+    monitor.outputChannels = 2
+    monitor.sampleRate = 44_100
+    #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
+    monitor.sampleRate = 48_000
+    monitor.isVirtual = true
+    #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
+    monitor.isVirtual = false
+    monitor.uid = loopback.uid
+    #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
+}
+
+@Test func privateRouteWithoutMonitorHasNoOutputOverride() throws {
+    let mic = AudioDevice(id: 17, uid: "mic", name: "Mic", inputChannels: 1,
+        outputChannels: 0, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
+    let loopback = AudioDevice(id: 41, uid: "loopback", name: "Loopback", inputChannels: 2,
+        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: true)
+
+    let plan = try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: nil)
+
+    #expect(plan.memberUIDs == ["mic", "loopback"])
+    #expect(plan.driftByUID == ["mic": 1, "loopback": 0])
+    #expect(plan.outputChannelMap == nil)
+}
+
 @Test func captureBoundsInterleavedChannelAndDetectsGap() throws {
     let capture = try #require(ml_capture_create(5, 48_000))
     defer { ml_capture_destroy(capture) }
