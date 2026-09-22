@@ -47,8 +47,8 @@ jobs:
       - name: Validate workflows, shell, and property lists
         run: |
           actionlint
-          bash -n scripts/build.sh scripts/package-dmg.sh
-          shellcheck scripts/build.sh scripts/package-dmg.sh
+          bash -n scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh
+          shellcheck scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh
           python3 - <<'PY'
           import plistlib
           from pathlib import Path
@@ -90,6 +90,7 @@ jobs:
           sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
           swift build --product MicLine -c release --sdk "$sdk_path" --arch arm64
           swift test --sdk "$sdk_path"
+          ./scripts/verify-sparkle-fixture.sh
           swiftc -typecheck scripts/generate-dmg-background.swift
           otool -l .build/out/Products/Release/MicLine | grep -F '@executable_path/../Frameworks'
 
