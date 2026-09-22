@@ -22,6 +22,7 @@ public final class AudioGraph: ObservableObject {
     @Published public private(set) var outputLevel = MeterReading.silence
     @Published public private(set) var formatDescription = "Audio is stopped"
     @Published public var genericEditorID: UUID?
+    public let diagnostics = DiagnosticLog()
 
     private var engine: AVAudioEngine?
     private var privateRoute: PrivateAudioRoute?
@@ -50,6 +51,7 @@ public final class AudioGraph: ObservableObject {
             settings = value
         } else { settings = SessionSettings() }
         refresh()
+        diagnostics.record(.appOpened)
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
         }
@@ -91,6 +93,17 @@ public final class AudioGraph: ObservableObject {
         plugins = PluginRegistry.scan()
     }
 
+    public func diagnosticReport(bundle: Bundle = .main) -> DiagnosticReport {
+        let monitorUID = privateRoute?.monitorUID ?? defaults.string(forKey: "monitorOutputUID")
+        return DiagnosticReport(
+            appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unavailable",
+            buildVersion: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unavailable",
+            osVersion: ProcessInfo.processInfo.operatingSystemVersion,
+            settings: settings, input: selectedInput, output: selectedOutput,
+            monitor: devices.first { $0.uid == monitorUID }, plugins: plugins,
+            running: running, monitoring: monitoring, events: diagnostics.entries)
+    }
+
     public func selectInput(_ uid: String) { guard uid != settings.inputUID else { return }; stop(); settings.inputUID = uid }
     public func selectOutput(_ uid: String) { guard uid != settings.outputUID else { return }; stop(); settings.outputUID = uid }
 
@@ -99,17 +112,24 @@ public final class AudioGraph: ObservableObject {
         stop()
         settings.effects.append(EffectSelection(pluginID: plugin.id))
         status = "Effect added. Start to load its controls."
+        diagnostics.record(.effectAdded)
     }
 
-    public func remove(_ id: UUID) { stop(); settings.effects.removeAll { $0.id == id } }
+    public func remove(_ id: UUID) {
+        stop()
+        settings.effects.removeAll { $0.id == id }
+        diagnostics.record(.effectRemoved)
+    }
     public func move(_ id: UUID, by offset: Int) {
         guard let from = settings.effects.firstIndex(where: { $0.id == id }),
               settings.effects.indices.contains(from + offset) else { return }
         stop()
         settings.effects.swapAt(from, from + offset)
+        diagnostics.record(.effectReordered)
     }
 
     public func stop(message: String = "Stopped. Your settings are saved.") {
+        if running || loading { diagnostics.record(.processingStopped) }
         generation += 1
         loading = false
         if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
@@ -127,7 +147,10 @@ public final class AudioGraph: ObservableObject {
                     guard data.count <= 1_048_576 else { throw GraphError.message("Plugin state exceeds the 1 MB limit.") }
                     settings.effects[i].state = data
                 }
-            } catch { stateError = "Effect settings could not be saved: \(error.localizedDescription)" }
+            } catch {
+                diagnostics.record(.stateSaveFailed, code: (error as NSError).code)
+                stateError = "Effect settings could not be saved: \(error.localizedDescription)"
+            }
         }
         engine = nil
         privateRoute = nil
@@ -161,6 +184,7 @@ public final class AudioGraph: ObservableObject {
     // output immediately before invoking this method because acoustic feedback
     // is possible. Monitoring is never restored by normal start or persistence.
     public func startMonitoring(outputUID: String) async {
+        diagnostics.record(.monitoringRequested)
         guard !loading, let input = selectedInput, let output = selectedOutput,
               let monitor = devices.first(where: { $0.uid == outputUID }) else {
             status = "The selected monitoring output is unavailable."
@@ -181,6 +205,7 @@ public final class AudioGraph: ObservableObject {
         guard canStart, !running, !Task.isCancelled else { return }
         if let routeIssue { status = routeIssue; return }
         stop()
+        diagnostics.record(.startRequested)
         loading = true
         generation += 1
         let token = generation
@@ -190,6 +215,7 @@ public final class AudioGraph: ObservableObject {
         guard !Task.isCancelled else { stop(message: "Start cancelled."); return }
         guard allowed else {
             loading = false
+            diagnostics.record(.permissionDenied)
             status = "Microphone access is denied. Enable MicLine in System Settings → Privacy & Security → Microphone."
             return
         }
@@ -294,6 +320,7 @@ public final class AudioGraph: ObservableObject {
             try graph.start()
             running = true; loading = false
             monitoring = monitor != nil
+            diagnostics.record(.processingStarted)
             formatDescription = "\(Int(format.sampleRate)) Hz · input buffer \(input.bufferFrames) frames · \(format.channelCount) ch"
             status = mutePhysicalOutput ? "Diagnostic processing · physical output muted" : monitor.map {
                 "Processing to \(output.name) and monitoring on \($0.name). Use headphones to avoid feedback."
@@ -301,6 +328,7 @@ public final class AudioGraph: ObservableObject {
             observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: graph, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.generation == token else { return }
+                    self.diagnostics.record(.configurationChanged)
                     if self.monitoring, graph.isRunning, let privateRoute = self.privateRoute {
                         do {
                             try graph.inputNode.withAudioUnit { inputUnit in
@@ -320,6 +348,7 @@ public final class AudioGraph: ObservableObject {
             }
         } catch {
             guard token == generation else { return }
+            diagnostics.record(.startFailed, code: (error as NSError).code)
             stop(message: "Could not start: \(error.localizedDescription)")
         }
     }
@@ -392,13 +421,16 @@ public final class AudioGraph: ObservableObject {
         if pollCount % 20 == 0 {
             let updated = DeviceRegistry.devices()
             if running && usesDefaultRoute && (selectedInput?.id != DeviceRegistry.defaultDevice(input: true) || selectedOutput?.id != DeviceRegistry.defaultDevice(input: false)) {
+                diagnostics.record(.configurationChanged)
                 stop(message: "System audio defaults changed. Check your selected devices and start again.")
             }
             if running && (!updated.contains { $0.uid == settings.inputUID && $0.inputChannels > 0 } || !updated.contains { $0.uid == settings.outputUID && $0.outputChannels > 0 }) {
+                diagnostics.record(.deviceDisconnected)
                 stop(message: "A selected device disconnected. Reconnect it or choose another device.")
             }
             if running, let monitorUID = privateRoute?.monitorUID,
                !updated.contains(where: { $0.uid == monitorUID && !$0.isVirtual && $0.outputChannels == 2 }) {
+                diagnostics.record(.deviceDisconnected)
                 stop(message: "The monitoring output disconnected. Check devices and start again.")
             }
             if updated != devices { devices = updated }
@@ -407,7 +439,10 @@ public final class AudioGraph: ObservableObject {
 
     private func save() {
         do { defaults.set(try JSONEncoder().encode(settings), forKey: "session") }
-        catch { status = "Could not save settings: \(error.localizedDescription)" }
+        catch {
+            diagnostics.record(.stateSaveFailed, code: (error as NSError).code)
+            status = "Could not save settings: \(error.localizedDescription)"
+        }
     }
 
     private func setDevice(_ id: AudioDeviceID, on unit: AudioUnit?) throws {
@@ -422,11 +457,16 @@ public final class AudioGraph: ObservableObject {
     }
 
     private func instantiate(_ description: AudioComponentDescription) async throws -> AVAudioUnit {
-        try await withCheckedThrowingContinuation { continuation in
-            AVAudioUnit.instantiate(with: description, options: .loadOutOfProcess) { unit, error in
-                if let unit { continuation.resume(returning: unit) }
-                else { continuation.resume(throwing: error ?? GraphError.message("Plugin did not load.")) }
+        do {
+            return try await withCheckedThrowingContinuation { continuation in
+                AVAudioUnit.instantiate(with: description, options: .loadOutOfProcess) { unit, error in
+                    if let unit { continuation.resume(returning: unit) }
+                    else { continuation.resume(throwing: error ?? GraphError.message("Plugin did not load.")) }
+                }
             }
+        } catch {
+            diagnostics.record(.pluginLoadFailed, code: (error as NSError).code)
+            throw error
         }
     }
 }

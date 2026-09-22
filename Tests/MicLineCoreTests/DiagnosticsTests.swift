@@ -66,3 +66,27 @@ import Testing
     #expect(report.lowCutHz == 80)
     #expect(!(try report.json()).contains("credential"))
 }
+
+@Test @MainActor func graphDiagnosticsUseOnlySelectedCapabilitiesAndControlEvents() throws {
+    let suite = "MicLine.DiagnosticsTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let graph = AudioGraph(defaults: defaults)
+    let privateText = "/Users/private-person/device-secret"
+    graph.devices = [AudioDevice(id: 999, uid: privateText, name: privateText,
+        inputChannels: 0, outputChannels: 2, sampleRate: 44_100,
+        bufferFrames: 256, isVirtual: false)]
+    defaults.set(privateText, forKey: "monitorOutputUID")
+    let plugin = PluginRecord(id: privateText, name: privateText, format: .au,
+        location: privateText, type: 1, subtype: 2, manufacturer: 3)
+    graph.plugins = [plugin]
+    graph.add(plugin)
+    let report = graph.diagnosticReport()
+    #expect(report.monitor?.sampleRate == 44_100)
+    #expect(report.input == nil)
+    #expect(report.events.map(\.event) == [.appOpened, .effectAdded])
+    #expect(report.effects.first?.subtype == 2)
+    #expect(!(try report.json()).contains(privateText))
+    graph.diagnostics.clear()
+    #expect(graph.diagnosticReport().events.isEmpty)
+}
