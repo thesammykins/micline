@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 import MicLineCore
@@ -133,5 +134,41 @@ struct PresentationFixtureView: View {
         }
         .padding(16).background(.background, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
+    }
+}
+
+/// The stopped fixture renders the production MainView itself. Audio actions are
+/// disabled and its graph uses the isolated presentation preferences suite.
+struct ProductionStoppedFixtureView: View {
+    @ObservedObject var graph: AudioGraph
+
+    var body: some View {
+        MainView(graph: graph, allowsAudioActions: false, showsOnboarding: false)
+            .safeAreaInset(edge: .top) {
+                Label("PRODUCTION LAYOUT FIXTURE · NO AUDIO", systemImage: "paintbrush.pointed")
+                    .font(.caption.bold()).foregroundStyle(.purple)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.top, 8)
+            }
+    }
+}
+
+struct FixtureSettingsUnavailableView: View {
+    var body: some View {
+        ContentUnavailableView("Settings unavailable in presentation fixtures",
+            systemImage: "paintbrush.pointed",
+            description: Text("This non-audio launch cannot read or change normal MicLine preferences."))
+            .frame(width: 480, height: 320)
+    }
+}
+
+struct FixtureMenuView: View {
+    var body: some View {
+        Text("Presentation fixture · no audio")
+        Text("Processing controls and Settings are unavailable")
+            .foregroundStyle(.secondary)
+        Divider()
+        Button("Quit MicLine") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }

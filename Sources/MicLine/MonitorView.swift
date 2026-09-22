@@ -3,6 +3,7 @@ import MicLineCore
 
 struct MonitorButton: View {
     @ObservedObject var graph: AudioGraph
+    var allowsMonitoring = true
     @AppStorage("monitorOutputUID") private var outputUID = ""
     @State private var confirm = false
 
@@ -27,7 +28,7 @@ struct MonitorButton: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
-        .disabled(graph.loading || (!graph.monitoring && !supported))
+        .disabled(!allowsMonitoring || graph.loading || (!graph.monitoring && !supported))
         .help(helpText)
         .accessibilityLabel(graph.monitoring ? "Stop monitoring" : "Monitor processed microphone")
         .confirmationDialog("Monitor on \(selected?.name ?? "selected output")?", isPresented: $confirm) {

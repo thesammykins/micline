@@ -35,15 +35,25 @@ struct MicLineApp: App {
     private let fixture = PresentationFixture.current
 
     init() {
-        let isolated = CommandLine.arguments.contains("--probe") || PresentationFixture.current != nil
-        let defaults = isolated ? UserDefaults(suiteName: "com.sammy.micline.presentation")! : .standard
+        let defaults: UserDefaults
+        if CommandLine.arguments.contains("--probe") {
+            defaults = UserDefaults(suiteName: "com.sammy.micline.probe")!
+        } else if PresentationFixture.current != nil {
+            defaults = UserDefaults(suiteName: "com.sammy.micline.presentation")!
+        } else {
+            defaults = .standard
+        }
         _graph = StateObject(wrappedValue: AudioGraph(defaults: defaults))
     }
 
     var body: some Scene {
         Window("MicLine", id: "main") {
             if let fixture {
-                PresentationFixtureView(fixture: fixture)
+                if fixture == .stopped {
+                    ProductionStoppedFixtureView(graph: graph)
+                } else {
+                    PresentationFixtureView(fixture: fixture)
+                }
             } else if CommandLine.arguments.contains("--preview-missing-blackhole") {
                 VStack(alignment: .leading) {
                     Text("Setup preview · simulated missing device").font(.caption).foregroundStyle(.secondary)
@@ -67,15 +77,22 @@ struct MicLineApp: App {
                     }
             }
         }
-        .defaultSize(width: 760, height: 690)
+        .defaultSize(width: 760, height: 760)
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
         .windowResizability(.contentMinSize)
 
-        Settings { SettingsRootView(graph: graph) }
+        Settings {
+            if fixture == nil { SettingsRootView(graph: graph) }
+            else { FixtureSettingsUnavailableView() }
+        }
 
-        MenuBarExtra("MicLine", systemImage: graph.running ? "waveform.circle.fill" : "waveform.circle") {
-            MenuView(graph: graph)
+        MenuBarExtra("MicLine", systemImage: fixture == nil && graph.running ? "waveform.circle.fill" : "waveform.circle") {
+            if fixture == nil {
+                MenuView(graph: graph)
+            } else {
+                FixtureMenuView()
+            }
         }
         .menuBarExtraStyle(.menu)
     }
@@ -92,8 +109,14 @@ struct MenuView: View {
         Divider()
         Button(graph.running || graph.loading ? "Stop Processing" : "Start Processing") {
             if graph.running || graph.loading { graph.stop() }
-            else { Task { await graph.start() } }
+            else if graph.selectedOutput?.isVirtual == false {
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            } else {
+                Task { await graph.start() }
+            }
         }
+        .help(graph.selectedOutput?.isVirtual == false ? "Open MicLine to review the physical-output feedback warning before starting." : "Start processing")
         .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
         .keyboardShortcut("s", modifiers: [.command, .shift])
         Divider()
@@ -124,6 +147,8 @@ struct MenuView: View {
 
 struct MainView: View {
     @ObservedObject var graph: AudioGraph
+    var allowsAudioActions = true
+    var showsOnboarding = true
     @AppStorage("completedSetup") private var completedSetup = false
     @State private var addingEffect = false
     @State private var setup = false
@@ -151,9 +176,16 @@ struct MainView: View {
         .frame(minWidth: 680, minHeight: 560)
         .toolbar {
             ToolbarItem(placement: .automatic) { ProcessingState(graph: graph).fixedSize() }
-            ToolbarItem(placement: .primaryAction) { StartButton(graph: graph).fixedSize() }
+            ToolbarItem(placement: .primaryAction) {
+                if allowsAudioActions {
+                    StartButton(graph: graph).fixedSize()
+                } else {
+                    Label("Start unavailable", systemImage: "play.fill")
+                        .foregroundStyle(.tertiary).padding(.horizontal, 10).fixedSize()
+                }
+            }
         }
-        .task { if !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
+        .task { if showsOnboarding && !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
         .sheet(isPresented: $setup) { OnboardingView(graph: graph, isPresented: $setup, completedSetup: $completedSetup) }
         .sheet(isPresented: $addingEffect) { EffectLibraryView(graph: graph) }
         .sheet(isPresented: Binding(get: { graph.genericEditorID != nil }, set: { if !$0 { graph.genericEditorID = nil } })) {
@@ -174,7 +206,7 @@ struct MainView: View {
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
                 routePicker(title: "PROCESSED OUTPUT", icon: "waveform", selection: Binding(
                     get: { graph.settings.outputUID }, set: { graph.selectOutput($0) }), devices: graph.outputs)
-                MonitorButton(graph: graph)
+                MonitorButton(graph: graph, allowsMonitoring: allowsAudioActions)
             }
             .padding(12)
             .background(.background, in: RoundedRectangle(cornerRadius: 10))
@@ -204,7 +236,7 @@ struct MainView: View {
                 HStack {
                     Text("Gain")
                     Spacer()
-                    TextField("Gain", value: $graph.settings.gainDB, format: .number.precision(.fractionLength(1)))
+                    TextField("Gain", value: gainBinding, format: .number.precision(.fractionLength(1)))
                         .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 70)
                         .accessibilityLabel("Gain in decibels")
                     Text("dB").foregroundStyle(.secondary)
@@ -222,7 +254,7 @@ struct MainView: View {
                     Button("Reset") { graph.settings.highPassHz = 80 }.buttonStyle(.link)
                 }
                 HStack {
-                    TextField("Low-cut frequency", value: $graph.settings.highPassHz, format: .number.precision(.fractionLength(0)))
+                    TextField("Low-cut frequency", value: lowCutBinding, format: .number.precision(.fractionLength(0)))
                         .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 76)
                         .disabled(!graph.settings.highPassEnabled)
                     Text("Hz").foregroundStyle(.secondary)
@@ -274,6 +306,18 @@ struct MainView: View {
     private var displayStatus: String {
         graph.status == "Choose an input and output, then start." && graph.canStart
             ? "Ready. Press Start to process your microphone." : graph.status
+    }
+
+    private var gainBinding: Binding<Double> {
+        Binding(get: { graph.settings.gainDB }, set: { value in
+            graph.settings.gainDB = value.isFinite ? min(12, max(-24, value)) : 0
+        })
+    }
+
+    private var lowCutBinding: Binding<Double> {
+        Binding(get: { graph.settings.highPassHz }, set: { value in
+            graph.settings.highPassHz = value.isFinite ? min(300, max(20, value)) : 80
+        })
     }
 }
 
