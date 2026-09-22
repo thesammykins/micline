@@ -5,6 +5,10 @@ import MicLineCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         UserDefaults.standard.register(defaults: ["showInDock": true])
         Self.setDockVisible(UserDefaults.standard.bool(forKey: "showInDock"))
     }
@@ -36,8 +40,8 @@ struct MicLineApp: App {
             if CommandLine.arguments.contains("--preview-missing-blackhole") {
                 VStack(alignment: .leading) {
                     Text("Setup preview · simulated missing device").font(.caption).foregroundStyle(.secondary)
-                    AudioSetupView(graph: graph, previewMissing: true)
-                }.padding(24).frame(width: 520)
+                    ScrollView { AudioSetupView(graph: graph, previewMissing: true) }
+                }.padding(24).frame(width: 520, height: 600)
             } else {
                 MainView(graph: graph)
                     .task {
@@ -56,7 +60,7 @@ struct MicLineApp: App {
                     }
             }
         }
-        .defaultSize(width: 680, height: 500)
+        .defaultSize(width: 680, height: 570)
         .defaultLaunchBehavior(.presented)
         .windowResizability(.contentMinSize)
 
@@ -93,6 +97,9 @@ struct MenuView: View {
                 Text(String(format: "%+.1f dB", graph.settings.gainDB)).monospacedDigit().frame(width: 64)
             }.font(.caption)
             Toggle("Bypass effects", isOn: $graph.bypass)
+            if graph.monitoring {
+                Label("Monitoring is on", systemImage: "headphones").font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 StartButton(graph: graph)
                 Spacer()
@@ -194,7 +201,11 @@ struct MainView: View {
                     Text("Effects run top to bottom. Adding, removing or reordering stops processing.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text(graph.status).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                Divider()
+                MonitorView(graph: graph)
+                Text(graph.status == "Choose an input and output, then start." && graph.canStart
+                     ? "Ready. Press Start to process your microphone." : graph.status)
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }.padding(24)
         }
         .frame(minWidth: 620, minHeight: 420)
@@ -206,7 +217,7 @@ struct MainView: View {
         .task { if !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
         .sheet(isPresented: $setup) {
             VStack(alignment: .leading, spacing: 20) {
-                AudioSetupView(graph: graph)
+                ScrollView { AudioSetupView(graph: graph) }.frame(maxHeight: 580)
                 HStack {
                     Spacer()
                     Button("Continue") {

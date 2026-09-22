@@ -75,6 +75,10 @@ struct AudioSetupView: View {
             Text("MicLine filters your voice. BlackHole carries the result to your call or recording app.").foregroundStyle(.secondary)
             LoginItemToggle().disabled(previewMissing)
             AutomaticProcessingToggle().disabled(previewMissing)
+            Picker("Microphone", selection: Binding(get: { graph.settings.inputUID }, set: { graph.selectInput($0) })) {
+                Text("Choose microphone…").tag("")
+                ForEach(graph.inputs.filter { !$0.isVirtual }) { Text($0.name).tag($0.uid) }
+            }.disabled(previewMissing)
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(blackHole == nil ? "BlackHole 2ch not detected" : "BlackHole 2ch is ready",
@@ -86,7 +90,7 @@ struct AudioSetupView: View {
                             graph.selectOutput(blackHole.uid)
                         }.disabled(graph.settings.outputUID == blackHole.uid)
                     } else {
-                        Text("1. Download and install BlackHole 2ch from its developer.\n2. Reopen MicLine and your audio apps, then check again.\n3. If it is still missing, follow the installer’s restart instructions.")
+                        Text("1. Download and install BlackHole 2ch from its developer.\n2. Follow the installer’s restart instructions.\n3. Reopen MicLine and your audio apps, then check again.")
                             .fixedSize(horizontal: false, vertical: true)
                         Link("Get BlackHole 2ch ↗", destination: URL(string: "https://existential.audio/blackhole/")!)
                     }
