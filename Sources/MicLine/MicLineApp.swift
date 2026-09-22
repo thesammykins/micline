@@ -2,24 +2,66 @@ import AppKit
 import SwiftUI
 import MicLineCore
 
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: ["showInDock": true])
+        Self.setDockVisible(UserDefaults.standard.bool(forKey: "showInDock"))
+    }
+
+    static func setDockVisible(_ visible: Bool) {
+        // Accessory apps keep their windows and menu-bar item, but leave the Dock
+        // and Command-Tab switcher. Never use .prohibited: it would hide our UI.
+        NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { sender.windows.first { $0.identifier?.rawValue == "main" }?.makeKeyAndOrderFront(nil) }
+        return true
+    }
+}
+
 @main
 struct MicLineApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var graph = AudioGraph(defaults: CommandLine.arguments.contains("--probe") ? UserDefaults(suiteName: "com.sammy.micline.probe")! : .standard)
     @State private var didProbe = false
+    @State private var didAttemptStartup = false
+
     var body: some Scene {
         Window("MicLine", id: "main") {
-            MainView(graph: graph)
-                .task {
-                    NSApp.activate(ignoringOtherApps: true)
-                    if CommandLine.arguments.contains("--probe"), !didProbe {
-                        didProbe = true
-                        Task { await runProbe(graph) }
+            if CommandLine.arguments.contains("--preview-missing-blackhole") {
+                VStack(alignment: .leading) {
+                    Text("Setup preview · simulated missing device").font(.caption).foregroundStyle(.secondary)
+                    AudioSetupView(graph: graph, previewMissing: true)
+                }.padding(24).frame(width: 520)
+            } else {
+                MainView(graph: graph)
+                    .task {
+                        NSApp.activate(ignoringOtherApps: true)
+                        if CommandLine.arguments.contains("--probe"), !didProbe {
+                            didProbe = true
+                            Task { await runProbe(graph) }
+                        } else if !CommandLine.arguments.contains("--probe"), !didAttemptStartup {
+                            didAttemptStartup = true
+                            if UserDefaults.standard.bool(forKey: "completedSetup"),
+                               UserDefaults.standard.bool(forKey: "startProcessingOnLaunch"),
+                               graph.selectedOutput?.isVirtual == true, graph.routeIssue == nil {
+                                await graph.start()
+                            }
+                        }
                     }
-                }
+            }
         }
-        .defaultSize(width: 1040, height: 820)
+        .defaultSize(width: 680, height: 500)
         .defaultLaunchBehavior(.presented)
         .windowResizability(.contentMinSize)
+
+        Settings { SettingsView(graph: graph) }
+
         MenuBarExtra("MicLine", systemImage: graph.running ? "waveform.circle.fill" : "waveform.circle") {
             MenuView(graph: graph)
         }
@@ -29,179 +71,156 @@ struct MicLineApp: App {
 
 struct MenuView: View {
     @ObservedObject var graph: AudioGraph
-    @Environment(\.openWindow) var openWindow
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("MicLine", systemImage: "waveform").font(.headline)
+                Text("MicLine").font(.headline)
                 Spacer()
-                Text(graph.running ? "LIVE" : "STOPPED").font(.caption).foregroundStyle(graph.running ? .green : .secondary)
+                ProcessingState(graph: graph)
             }
-            Text(graph.selectedInput?.name ?? "No microphone selected").lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Label(graph.selectedInput?.name ?? "Choose a microphone", systemImage: "mic")
+                Label(graph.selectedOutput?.name ?? "Choose an output", systemImage: "arrow.turn.down.right")
+                    .foregroundStyle(.secondary)
+            }.lineLimit(1).font(.callout)
             LevelMeter(title: "Input", db: graph.inputDB)
             LevelMeter(title: "Output", db: graph.outputDB, peak: graph.outputPeak)
             HStack {
-                Text("Gain").font(.caption)
+                Text("Gain")
                 Slider(value: $graph.settings.gainDB, in: -24...12, step: 0.5).accessibilityLabel("Input gain")
-                Text(String(format: "%+.1f dB", graph.settings.gainDB)).font(.caption.monospacedDigit())
-            }
+                Text(String(format: "%+.1f dB", graph.settings.gainDB)).monospacedDigit().frame(width: 64)
+            }.font(.caption)
             Toggle("Bypass effects", isOn: $graph.bypass)
             HStack {
                 StartButton(graph: graph)
+                Spacer()
                 Button("Open MicLine") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
             }
             Divider()
-            Button("Quit MicLine", role: .destructive) { graph.stop(); NSApp.terminate(nil) }
-        }
-        .padding(20).frame(width: 320)
+            HStack {
+                SettingsLink { Text("Settings…") }
+                Spacer()
+                Button("Quit") { graph.stop(); NSApp.terminate(nil) }.keyboardShortcut("q")
+            }
+        }.padding(20).frame(width: 300)
     }
 }
 
 struct MainView: View {
     @ObservedObject var graph: AudioGraph
-    @State private var search = ""
-    @State private var measuring = false
+    @AppStorage("completedSetup") private var completedSetup = false
+    @State private var addingEffect = false
+    @State private var setup = false
+
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
-                Label("MicLine", systemImage: "waveform.circle.fill").font(.title2.bold())
-                Text("YOUR MICROPHONE, REFINED").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                Divider()
-                Label("Signal chain", systemImage: "slider.horizontal.3").font(.headline).foregroundStyle(.tint)
-                Label("Local processing", systemImage: "lock.shield").foregroundStyle(.secondary)
-                Spacer()
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Output routing", systemImage: "arrow.triangle.branch").font(.headline)
-                    Text("Choose an existing loopback device, then select its input in your call app.").font(.caption).foregroundStyle(.secondary)
-                    Text("No virtual driver is installed by MicLine.").font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .top, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("Microphone", selection: Binding(get: { graph.settings.inputUID }, set: { graph.selectInput($0) })) {
+                            Text("Choose microphone…").tag("")
+                            ForEach(graph.inputs) { Text($0.name).tag($0.uid) }
+                        }.labelsHidden().accessibilityLabel("Microphone input")
+                        LevelMeter(title: "Input", db: graph.inputDB)
+                    }
+                    Image(systemName: "arrow.right").foregroundStyle(.tertiary).padding(.top, 5)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("Output", selection: Binding(get: { graph.settings.outputUID }, set: { graph.selectOutput($0) })) {
+                            Text("Choose output…").tag("")
+                            ForEach(graph.outputs) { Text($0.name).tag($0.uid) }
+                        }.labelsHidden().accessibilityLabel("Processed output device")
+                        LevelMeter(title: "Output", db: graph.outputDB, peak: graph.outputPeak)
+                    }
                 }
-                Divider()
-                Text("macOS 27 · Native audio").font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(24).frame(width: 210).frame(maxHeight: .infinity).background(.thinMaterial)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Signal chain").font(.largeTitle.bold())
-                            Text("A clearer voice, from input to output.").foregroundStyle(.secondary)
+                if let output = graph.selectedOutput, output.isVirtual {
+                    Text("In your call or recording app, choose **\(output.name)** as the microphone.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else if graph.selectedOutput != nil {
+                    Label("Use headphones to avoid microphone feedback.", systemImage: "headphones")
+                        .font(.callout).foregroundStyle(.orange)
+                } else {
+                    Button("Set up BlackHole output…") { setup = true }.font(.callout)
+                }
+                if let issue = graph.routeIssue {
+                    Label(issue, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                }
+                if graph.running && graph.inputFrames > 48_000 && graph.inputDB <= -90 {
+                    Label("No microphone signal. If your MacBook lid is closed, open it.", systemImage: "mic.slash")
+                        .font(.callout).foregroundStyle(.orange)
+                }
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Gain").frame(width: 80, alignment: .leading)
+                            Slider(value: $graph.settings.gainDB, in: -24...12, step: 0.5).accessibilityLabel("Input gain")
+                            Text(String(format: "%+.1f dB", graph.settings.gainDB)).monospacedDigit().frame(width: 72, alignment: .trailing)
                         }
-                        Spacer()
-                        StartButton(graph: graph)
-                    }
-                    HStack(alignment: .top, spacing: 16) {
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Picker("Microphone", selection: Binding(get: { graph.settings.inputUID }, set: { graph.selectInput($0) })) {
-                                    Text("Choose input…").tag("")
-                                    ForEach(graph.inputs) { Text($0.name).tag($0.uid) }
-                                }.labelsHidden().accessibilityLabel("Microphone input")
-                                LevelMeter(title: "Input", db: graph.inputDB)
-                            }.padding(8)
-                        } label: { Label("Input", systemImage: "mic") }
-                        Image(systemName: "arrow.right").foregroundStyle(.secondary).padding(.top, 45)
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Picker("Output", selection: Binding(get: { graph.settings.outputUID }, set: { graph.selectOutput($0) })) {
-                                    Text("Choose output…").tag("")
-                                    ForEach(graph.outputs) { Text($0.name + ($0.isVirtual ? " · Virtual" : "")).tag($0.uid) }
-                                }.labelsHidden().accessibilityLabel("Processed output device")
-                                LevelMeter(title: "Output", db: graph.outputDB, peak: graph.outputPeak)
-                            }.padding(8)
-                        } label: { Label("Output", systemImage: "waveform.path") }
-                    }
-                    if let issue = graph.routeIssue {
-                        Label(issue, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
-                    }
-                    if graph.running && graph.inputFrames > 48_000 && graph.inputDB <= -90 {
-                        Label("No input signal. If using a MacBook’s built-in microphone, open the lid.", systemImage: "mic.slash")
-                            .font(.callout).foregroundStyle(.orange)
-                    }
-                    if let output = graph.selectedOutput, !output.isVirtual {
-                        Label("Physical output selected. Use headphones to prevent microphone feedback.", systemImage: "exclamationmark.triangle")
-                            .font(.callout).foregroundStyle(.orange)
-                    }
-                    GroupBox {
-                        VStack(spacing: 18) {
-                            HStack {
-                                Label("Input gain", systemImage: "dial.low")
-                                Slider(value: $graph.settings.gainDB, in: -24...12, step: 0.5).accessibilityLabel("Input gain")
-                                Text(String(format: "%+.1f dB", graph.settings.gainDB)).monospacedDigit().frame(width: 75, alignment: .trailing)
-                            }
-                            HStack {
-                                Toggle("Low cut", isOn: $graph.settings.highPassEnabled).frame(width: 140, alignment: .leading)
-                                Slider(value: $graph.settings.highPassHz, in: 20...300, step: 1).accessibilityLabel("Low-cut frequency")
-                                    .disabled(!graph.settings.highPassEnabled)
-                                Text("\(Int(graph.settings.highPassHz)) Hz").monospacedDigit().frame(width: 75, alignment: .trailing)
-                            }
-                        }.padding(10)
-                    } label: { Text("Voice fundamentals") }
+                        HStack {
+                            Toggle("Low cut", isOn: $graph.settings.highPassEnabled).frame(width: 80, alignment: .leading)
+                            Slider(value: $graph.settings.highPassHz, in: 20...300, step: 1).accessibilityLabel("Low-cut frequency")
+                                .disabled(!graph.settings.highPassEnabled)
+                            Text("\(Int(graph.settings.highPassHz)) Hz").monospacedDigit().frame(width: 72, alignment: .trailing)
+                        }.help("Reduce low-frequency rumble before the effects chain.")
+                    }.padding(6)
+                }
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Effects").font(.title2.bold())
-                        Text("\(graph.settings.effects.count)").foregroundStyle(.secondary)
+                        Text("Effects").font(.headline)
                         Spacer()
-                        Toggle("Bypass effects", isOn: $graph.bypass).toggleStyle(.switch).controlSize(.small)
+                        Toggle("Bypass", isOn: $graph.bypass).toggleStyle(.switch).controlSize(.small)
+                            .accessibilityLabel("Bypass effects")
+                        Button { addingEffect = true } label: { Label("Add Effect", systemImage: "plus") }
+                            .disabled(graph.loading || graph.settings.effects.count >= 16)
                     }
                     if graph.settings.effects.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "line.3.horizontal.decrease.circle").font(.largeTitle).foregroundStyle(.secondary)
-                            Text("Make room for your voice").font(.headline)
-                            Text("Add an Audio Unit below. Effects run from top to bottom.").foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity).padding(22).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+                        HStack {
+                            Image(systemName: "slider.horizontal.3").font(.title2).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("No effects added")
+                                Text("Gain and low cut work on their own.").font(.callout).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }.padding(16).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                     } else {
-                        VStack(spacing: 8) {
+                        VStack(spacing: 0) {
                             ForEach(Array(graph.settings.effects.enumerated()), id: \.element.id) { index, effect in
-                                HStack(spacing: 12) {
-                                    Text(String(format: "%02d", index + 1)).monospacedDigit().foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(graph.plugins.first { $0.id == effect.pluginID }?.name ?? "Missing effect").font(.headline)
-                                        Text(effect.bypassed || graph.bypass ? "Bypassed" : "Audio Unit").font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Toggle("Enabled", isOn: Binding(get: { !effect.bypassed }, set: { enabled in
-                                        if let i = graph.settings.effects.firstIndex(where: { $0.id == effect.id }) { graph.settings.effects[i].bypassed = !enabled }
-                                    })).labelsHidden().toggleStyle(.switch).controlSize(.small).accessibilityLabel("Enable effect \(index + 1)")
-                                    Button { graph.move(effect.id, by: -1) } label: { Image(systemName: "arrow.up") }.disabled(index == 0).help("Move earlier")
-                                    Button { graph.move(effect.id, by: 1) } label: { Image(systemName: "arrow.down") }.disabled(index == graph.settings.effects.count - 1).help("Move later")
-                                    Button("Controls") { graph.openEditor(effect.id) }.disabled(graph.loading)
-                                    Button { graph.remove(effect.id) } label: { Image(systemName: "minus.circle") }.help("Remove effect")
-                                }.padding(12).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+                                EffectRow(graph: graph, index: index, effect: effect)
+                                if index < graph.settings.effects.count - 1 { Divider() }
                             }
-                        }
+                        }.padding(.horizontal, 12).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    DisclosureGroup("Plugin library · \(graph.plugins.count) entries") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            TextField("Search installed effects", text: $search).textFieldStyle(.roundedBorder)
-                            Text("AU effects are registered with macOS. VST2 / VST3 entries are unvalidated filesystem candidates, not confirmed plugins; their host bridge is not yet integrated.").font(.caption).foregroundStyle(.secondary)
-                            ForEach(graph.plugins.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { plugin in
-                                HStack {
-                                    Text(plugin.name)
-                                    Spacer()
-                                    Text(plugin.format.rawValue).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                    Button(plugin.hostable ? "Add" : "Unvalidated · host unavailable") { graph.add(plugin) }.disabled(!plugin.hostable || graph.loading)
-                                }
-                            }
-                            if graph.plugins.isEmpty { Text("No installed effects found. Low cut and gain still work.").foregroundStyle(.secondary) }
-                            Button("Rescan plugins and devices") { graph.refresh() }
-                        }.padding(.top, 12)
-                    }
-                    Divider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(graph.status, systemImage: graph.running ? "checkmark.circle.fill" : "info.circle")
-                            .foregroundStyle(graph.running ? Color.green : Color.secondary)
-                        Text(graph.formatDescription).font(.caption.monospaced()).foregroundStyle(.secondary)
-                        Text("Latency has not been measured for this route. Effect settings save when processing stops.").font(.caption).foregroundStyle(.secondary)
-                        Button("Test microphone with output muted") { Task { await graph.start(mutePhysicalOutput: true) } }
-                            .disabled(!graph.canStart || graph.running)
-                        Button("Check loopback signal alignment…") { measuring = true }
-                            .disabled(graph.running || graph.loading)
-                    }
-                }.padding(28)
-            }
+                    Text("Effects run top to bottom. Adding, removing or reordering stops processing.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text(graph.status).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+            }.padding(24)
         }
-        .frame(minWidth: 930, minHeight: 650)
-        .sheet(isPresented: $measuring) { MeasurementView(graph: graph) }
+        .frame(minWidth: 620, minHeight: 420)
+        .toolbar {
+            ToolbarItem(placement: .automatic) { ProcessingState(graph: graph).labelStyle(.titleAndIcon).fixedSize() }
+            ToolbarItem(placement: .primaryAction) { StartButton(graph: graph).labelStyle(.titleAndIcon).fixedSize() }
+            ToolbarItem { SettingsLink { Image(systemName: "gearshape") }.help("Settings") }
+        }
+        .task { if !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
+        .sheet(isPresented: $setup) {
+            VStack(alignment: .leading, spacing: 20) {
+                AudioSetupView(graph: graph)
+                HStack {
+                    Spacer()
+                    Button("Continue") {
+                        completedSetup = true
+                        setup = false
+                        if UserDefaults.standard.bool(forKey: "startProcessingOnLaunch"),
+                           graph.selectedOutput?.isVirtual == true, graph.routeIssue == nil {
+                            Task { await graph.start() }
+                        }
+                    }.keyboardShortcut(.defaultAction)
+                }
+            }.padding(24).frame(width: 520)
+        }
+        .sheet(isPresented: $addingEffect) { EffectLibraryView(graph: graph) }
         .sheet(isPresented: Binding(get: { graph.genericEditorID != nil }, set: { if !$0 { graph.genericEditorID = nil } })) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack { Text("Effect parameters").font(.title2); Spacer(); Button("Done") { graph.genericEditorID = nil } }
@@ -221,6 +240,16 @@ struct MainView: View {
     }
 }
 
+struct ProcessingState: View {
+    @ObservedObject var graph: AudioGraph
+    var body: some View {
+        Label(graph.loading ? "Starting…" : graph.running ? (graph.bypass ? "Bypassed" : "Processing") : "Stopped",
+              systemImage: graph.running ? "circle.fill" : "circle")
+            .font(.callout).foregroundStyle(graph.running ? Color.green : Color.secondary)
+            .accessibilityIdentifier("processing-state")
+    }
+}
+
 struct StartButton: View {
     @ObservedObject var graph: AudioGraph
     @State private var confirm = false
@@ -233,10 +262,10 @@ struct StartButton: View {
             Label(graph.loading ? "Cancel" : graph.running ? "Stop" : "Start", systemImage: graph.running ? "stop.fill" : "play.fill")
         }
         .buttonStyle(.borderedProminent)
-        .disabled(!graph.running && !graph.loading && !graph.canStart)
+        .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
         .confirmationDialog("Send microphone audio to a physical output?", isPresented: $confirm) {
             Button("Start with headphones") { Task { await graph.start() } }
-        } message: { Text("Speakers near the microphone can create loud feedback. An existing virtual loopback output is recommended for calls.") }
+        } message: { Text("Speakers near the microphone can create loud feedback. Use BlackHole for calls, or headphones for monitoring.") }
     }
 }
 
@@ -258,8 +287,7 @@ struct LevelMeter: View {
                     Capsule().fill(peak >= 1 ? Color.red : Color.green)
                         .frame(width: proxy.size.width * min(1, max(0, (db + 60) / 60)))
                 }
-            }.frame(height: 8)
-            HStack { Text("−60"); Spacer(); Text("−24"); Spacer(); Text("0") }.font(.system(size: 9).monospacedDigit()).foregroundStyle(.tertiary)
+            }.frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) RMS level")
