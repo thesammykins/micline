@@ -49,6 +49,7 @@ jobs:
           MICLINE_NOTARIZE_REQUESTED: ${{ inputs.notarize }}
           MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
+          MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
         run: |
           : "${MICLINE_ENABLE_SIGNED_RELEASE:?MICLINE_ENABLE_SIGNED_RELEASE repository variable is required}"
           [[ "$MICLINE_ENABLE_SIGNED_RELEASE" == "true" ]] || {
@@ -56,13 +57,17 @@ jobs:
             exit 1
           }
           ./scripts/build.sh --check-release-configuration
+          [[ "$MICLINE_SIGNING_CERTIFICATE_SHA1" =~ ^[[:xdigit:]]{40}$ ]] || {
+            echo "MICLINE_SIGNING_CERTIFICATE_SHA1 must pin the new MicLine Developer ID certificate" >&2
+            exit 1
+          }
           : "${MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES:?credential-file handling is not approved}"
           [[ "$MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES" == "true" ]] || {
             echo "Signed CI remains blocked: security import requires a temporary PKCS#12 file" >&2
             exit 1
           }
           [[ "$MICLINE_NOTARIZE_REQUESTED" != "true" ]] || {
-            echo "Hosted notarization remains blocked: the runner has no approved fileless notary credential provisioning" >&2
+            echo "Hosted notarization remains blocked: MicLine notary credential provisioning is not configured" >&2
             exit 1
           }
 
@@ -70,6 +75,7 @@ jobs:
         env:
           CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
         run: |
           : "${CERTIFICATE_P12_BASE64:?MACOS_CERTIFICATE_P12_BASE64 is required}"
           : "${CERTIFICATE_PASSWORD:?MACOS_CERTIFICATE_PASSWORD is required}"
@@ -77,8 +83,8 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/micline-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/micline-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          umask 077
           printf '%s' "$CERTIFICATE_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          chmod 600 "$CERTIFICATE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -94,11 +100,19 @@ jobs:
             -k "$KEYCHAIN_PASSWORD" \
             "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
+          [[ "$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -v fingerprint="$MICLINE_SIGNING_CERTIFICATE_SHA1" '
+            toupper($2) == toupper(fingerprint) && /"Developer ID Application:/ { matching++ }
+            $1 ~ /^[0-9]+\)$/ && $2 ~ /^[[:xdigit:]]+$/ && length($2) == 40 { total++ }
+            END { print matching + 0 ":" total + 0 }
+          ')" == "1:1" ]] || {
+            echo "The imported release keychain must contain only the pinned MicLine Developer ID identity" >&2
+            exit 1
+          }
 
       - name: Build hardened Developer ID app
         env:
           MICLINE_SIGNING_MODE: developer-id
-          MICLINE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
           MICLINE_VERSION: ${{ inputs.version }}
           MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
           MICLINE_REQUIRE_APP_ICON: "1"
@@ -108,7 +122,7 @@ jobs:
 
       - name: Package signed artifact
         env:
-          MICLINE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           ./scripts/package-dmg.sh \

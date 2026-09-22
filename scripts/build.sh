@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${MICLINE_APP_PATH:-$ROOT/build/MicLine.app}"
 MINIMUM_MAJOR=27
-DEFAULT_DEVELOPMENT_IDENTITY="Apple Development: Created via API (8K7KPLC29D)"
 
 die() {
     printf 'error: %s\n' "$*" >&2
@@ -138,14 +137,10 @@ fi
 
 case "$SIGNING_MODE" in
     development)
-        # Keep this stable identity as the local default so rebuilds preserve the
-        # app's designated requirement and existing microphone consent.
-        IDENTITY="${MICLINE_SIGNING_IDENTITY:-$DEFAULT_DEVELOPMENT_IDENTITY}"
+        EXPECTED_IDENTITY_TYPE='Apple Development:'
         ;;
     developer-id)
-        IDENTITY="${MICLINE_SIGNING_IDENTITY:-}"
-        [[ -n "$IDENTITY" ]] || die "MICLINE_SIGNING_IDENTITY is required for developer-id signing"
-        [[ "$IDENTITY" == "Developer ID Application:"* ]] || die "developer-id signing requires a Developer ID Application identity"
+        EXPECTED_IDENTITY_TYPE='Developer ID Application:'
         [[ -n "$VERSION" ]] || die "MICLINE_VERSION is required for developer-id builds"
         [[ -n "$BUILD_NUMBER" ]] || die "MICLINE_BUILD_NUMBER is required for developer-id builds"
         [[ -n "${MICLINE_SPARKLE_FEED_URL:-}" ]] || die "MICLINE_SPARKLE_FEED_URL is required for developer-id builds"
@@ -155,6 +150,13 @@ case "$SIGNING_MODE" in
         die "MICLINE_SIGNING_MODE must be development or developer-id"
         ;;
 esac
+IDENTITY="${MICLINE_SIGNING_CERTIFICATE_SHA1:-}"
+[[ "$IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] || die "MICLINE_SIGNING_CERTIFICATE_SHA1 must be a 40-character certificate fingerprint"
+IDENTITY="$(printf '%s' "$IDENTITY" | tr '[:lower:]' '[:upper:]')"
+[[ "$(security find-identity -v -p codesigning | awk -v fingerprint="$IDENTITY" -v label="$EXPECTED_IDENTITY_TYPE" '
+    toupper($2) == fingerprint && index($0, "\"" label) { count++ }
+    END { print count + 0 }
+')" == "1" ]] || die "the selected $EXPECTED_IDENTITY_TYPE certificate is not uniquely available"
 
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 BIN_PATHS=()

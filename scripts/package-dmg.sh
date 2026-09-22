@@ -20,7 +20,7 @@ Usage: package-dmg.sh [options]
   --app PATH           App bundle to package (default: build/MicLine.app)
   --output PATH        Output DMG (default: build/MicLine.dmg)
   --volume-name NAME   Mounted volume name (default: MicLine)
-  --sign-dmg           Sign the DMG using MICLINE_SIGNING_IDENTITY
+  --sign-dmg           Sign the DMG using MICLINE_SIGNING_CERTIFICATE_SHA1
   --notarize           Submit, wait, staple, and validate notarization
   --validate-only      Validate inputs and tooling without creating a DMG
 EOF
@@ -76,8 +76,14 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 swiftc -parse "$ROOT/scripts/generate-dmg-background.swift"
 
 if ((SIGN_DMG)); then
-    [[ -n "${MICLINE_SIGNING_IDENTITY:-}" ]] || die "MICLINE_SIGNING_IDENTITY is required with --sign-dmg"
-    [[ "$MICLINE_SIGNING_IDENTITY" == "Developer ID Application:"* ]] || die "--sign-dmg requires a Developer ID Application identity"
+    SIGNING_FINGERPRINT="${MICLINE_SIGNING_CERTIFICATE_SHA1:-}"
+    [[ "$SIGNING_FINGERPRINT" =~ ^[[:xdigit:]]{40}$ ]] || \
+        die "MICLINE_SIGNING_CERTIFICATE_SHA1 must be a 40-character certificate fingerprint with --sign-dmg"
+    SIGNING_FINGERPRINT="$(printf '%s' "$SIGNING_FINGERPRINT" | tr '[:lower:]' '[:upper:]')"
+    [[ "$(security find-identity -v -p codesigning | awk -v fingerprint="$SIGNING_FINGERPRINT" '
+        toupper($2) == fingerprint && /"Developer ID Application:/ { count++ }
+        END { print count + 0 }
+    ')" == "1" ]] || die "the selected Developer ID Application certificate is not uniquely available"
 fi
 if ((NOTARIZE)); then
     ((SIGN_DMG)) || die "--notarize requires --sign-dmg"
@@ -171,7 +177,7 @@ hdiutil convert \
 hdiutil verify "$OUTPUT" >/dev/null
 
 if ((SIGN_DMG)); then
-    codesign --force --timestamp --sign "$MICLINE_SIGNING_IDENTITY" "$OUTPUT"
+    codesign --force --timestamp --sign "$SIGNING_FINGERPRINT" "$OUTPUT"
     codesign --verify --verbose=2 "$OUTPUT"
 fi
 

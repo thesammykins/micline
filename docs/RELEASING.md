@@ -36,19 +36,21 @@ older-deployment-target/API compatibility effort and testing on Intel hardware.
 
 ## Local builds
 
-The default keeps the existing development identity so repeated local rebuilds
-retain their designated requirement and microphone permission:
+Development builds also require the explicit SHA-1 fingerprint of an approved
+Apple Development identity. Select the same approved certificate for repeated
+local rebuilds if you need to retain the app's designated requirement and
+microphone permission. There is no implicit identity fallback:
 
 ```sh
-./scripts/build.sh
+MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_APPROVED_DEVELOPMENT_CERTIFICATE' ./scripts/build.sh
 ```
 
-To make a Developer ID build, select that mode and provide the exact identity
-already present in the keychain:
+To make a Developer ID build, select the dedicated MicLine certificate by its
+exact SHA-1 fingerprint, not the common name shared by a developer's certificates:
 
 ```sh
 MICLINE_SIGNING_MODE=developer-id \
-MICLINE_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
+MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_MICLINE_CERTIFICATE' \
 MICLINE_VERSION=0.1.0 \
 MICLINE_BUILD_NUMBER=1 \
 MICLINE_REQUIRE_APP_ICON=1 \
@@ -57,6 +59,10 @@ MICLINE_SPARKLE_PUBLIC_ED_KEY='BASE64_PUBLIC_KEY' \
 ./scripts/build.sh
 ```
 
+Developer ID mode first verifies that the fingerprint uniquely identifies an
+available Developer ID Application identity, then signs with that fingerprint.
+The certificate must be newly issued for MicLine; the script cannot infer its
+provenance from the common name or team. Do not supply a Trellis fingerprint.
 Developer ID mode always enables the hardened runtime and a trusted timestamp.
 The script never falls back to ad-hoc signing. It also requires the release
 version, build number, and public Sparkle metadata:
@@ -83,7 +89,7 @@ deployment target.
 Package the signed app with the branded Finder layout and Applications alias:
 
 ```sh
-MICLINE_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
+MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_MICLINE_CERTIFICATE' \
 ./scripts/package-dmg.sh \
   --app build/MicLine.app \
   --output build/MicLine-0.1.0.dmg \
@@ -128,17 +134,28 @@ For this repository under a personal account, release credentials must use the
 `release-signing` environment rather than repository secrets. Organization
 secrets become available only if the repository is owned by an organization.
 
-The `release-signing` environment is configured with a custom deployment-branch
-policy that admits only the exact `main` branch. The workflow independently checks
-the `main` ref before credential use. Required reviewers, self-review prevention,
-and wait timers are not available for a private personal repository on GitHub
-Free or Pro; GitHub makes those rules available on public repositories. Repository
-visibility must not be changed to obtain them without separate authorization.
-If the repository later becomes public, add an independent required reviewer and
-prevent self-review before enabling signed builds. The repository currently has
-only one collaborator, so that two-person gate cannot be configured usefully yet.
-Do not fall back to broader repository secrets. No environment secrets or
-variables are currently configured.
+The `release-signing` environment currently has metadata for a custom exact-`main`
+deployment-branch policy, but no required reviewers or self-review prevention.
+The workflow independently checks the `main` ref before credential use. Do not
+treat environment metadata as proof that the protection is enforced for this
+private personal repository/plan. GitHub limits reviewer gates on private Free,
+Pro, and Team repositories; public visibility might make them available, but
+visibility changes require separate authorization. Before adding any certificate
+or notary credential, obtain an enforceable independent reviewer gate and verify
+its behavior with a credential-free deployment test. If that is impossible on the
+current plan, stop; do not fall back to repository secrets or use the unreviewed
+environment as a substitute. No environment secrets or variables are configured.
+
+The only currently visible ASC CLI profile is `RosterEase`; its permission to
+perform MicLine work is unverified. Do not select its default context until the
+account holder confirms MicLine authorization or provides a dedicated login.
+Once authorized, create a new MicLine-only Developer ID certificate and its CSR
+using secure, locally controlled private-key handling. The CLI supports
+`--generate-csr --key-out`; a new MicLine-specific private-key file is permitted
+under the approved secure file-secret workflow, but must never enter source,
+logs, messages, or artifacts. Confirm the certificate's nonsecret
+serial/team/expiry/fingerprint, then select that exact fingerprint for signing.
+Do not revoke, rotate, export, or reuse any other product's identity.
 
 Repository privacy is not a release security boundary. Pull-request jobs must
 remain credential-free, and signed jobs must remain manual, `main`-only,
@@ -151,7 +168,11 @@ chat or source:
 | --- | --- |
 | `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID certificate and private key in PKCS#12 format |
 | `MACOS_CERTIFICATE_PASSWORD` | PKCS#12 export password |
-| `APPLE_DEVELOPER_ID_APPLICATION` | Exact `Developer ID Application: … (TEAMID)` identity |
+
+Set environment variable `MICLINE_SIGNING_CERTIFICATE_SHA1` to the nonsecret
+40-character fingerprint of the dedicated MicLine certificate. A common name
+is not a safe selector: multiple Developer ID certificates can share it. Verify
+that the imported release Keychain contains exactly this identity before signing.
 
 Add public environment variables `MICLINE_SPARKLE_FEED_URL` and
 `MICLINE_SPARKLE_PUBLIC_ED_KEY`. Set repository variable
@@ -161,21 +182,25 @@ unset makes the manually dispatched job fail explicitly before loading signing
 credentials. The workflow validates the host, SDK, version, architecture, and
 public Sparkle metadata before the certificate is loaded.
 
-The prepared hosted workflow currently must decode the PKCS#12 certificate into
-a temporary file because `security import` consumes a path. Current authority
-prohibits certificate and private-key files, including temporary ones. Therefore
-repository variable `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES` must remain unset:
-the job fails before loading secrets. Set it only after Sammy separately approves
-this exact ephemeral-file mechanism, or replace the mechanism with a verified
-supported approach that does not create the file. Choosing a secret scope or
-enabling `MICLINE_ENABLE_SIGNED_RELEASE` is not that approval. The random
-ephemeral-keychain password remains only in the step process memory.
+The prepared hosted workflow decodes a PKCS#12 identity into a temporary file
+because `security import` consumes a path. Sammy authorized secure masked/file-
+secret handling for the new MicLine identity, not reuse or export of an existing
+product's identity. Keep the PKCS#12 payload and password out of source, logs,
+prompts, and artifacts. The temporary file must be created only on the ephemeral
+hosted runner after environment protection is independently verified, restricted
+to the job, and deleted by unconditional cleanup. The random ephemeral-Keychain
+password remains only in step memory. `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES`
+and `MICLINE_ENABLE_SIGNED_RELEASE` must remain unset until the new certificate,
+independent approval gate, and credential import have been verified; neither
+variable by itself is authorization to sign or publish.
 
 Hosted notarization is also disabled. A fresh GitHub-hosted runner has no
-pre-provisioned `notarytool` Keychain profile, and no approved fileless mechanism
-has been established for provisioning one. Selecting the `notarize` input fails
-before credential loading. Do not replace that stop with an App Store Connect key
-file unless the file mechanism receives separate approval.
+pre-provisioned `notarytool` Keychain profile, and no MicLine-authorized profile
+or secure provisioning procedure has been established. Selecting the `notarize`
+input fails before credential loading. The new file-secret authority permits
+designing such a procedure, but does not make an unrelated default ASC profile
+usable. Keep this stop until a MicLine-specific profile and protected credential
+mechanism are tested; do not silently substitute a Trellis/RosterEase key.
 
 To build an artifact, manually dispatch **Build signed release artifact**, enter
 the version and integer build number, leave notarization disabled, and type
@@ -191,8 +216,8 @@ the version and integer build number, leave notarization disabled, and type
 The workflow has only `contents: read` permission. Creating tags, GitHub Releases,
 or public downloads remains a separate human-authorized action.
 
-The signed workflow is intentionally untested until the required secrets and
-protected environment exist and ephemeral certificate-file handling is approved.
+The signed workflow is intentionally untested until the dedicated MicLine identity,
+required secrets, and enforceably protected environment exist.
 A local Developer ID identity being present does not prove CI import or
 timestamping. Hosted notarization remains disabled; local notarization requires
 an existing authorized `notarytool` Keychain profile and explicit submission
@@ -346,9 +371,9 @@ for the 2.10 tool behavior used here.
   App Store Connect key, and
   Sparkle private key can authorize malicious releases. Keep them out of PR jobs,
   logs, source, artifacts, and prompts. The hosted signing path is additionally
-  blocked because `security import` requires a temporary P12 file; cleanup is
-  not a substitute for approval to create it. Hosted notarization remains blocked
-  because no approved fileless profile-provisioning path exists.
+  blocked because the new MicLine identity and an enforceable independent
+  environment approval gate do not yet exist. Hosted notarization remains blocked
+  because no authorized MicLine profile/provisioning path exists.
 - **Untrusted workflow changes:** pull requests receive no signing secrets. The
   credentialed workflow is manual, main-only, explicitly enabled, confirmation
   gated, and artifact-only. Review workflow changes before enabling it.

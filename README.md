@@ -114,13 +114,14 @@ signing identity stable so microphone permission survives rebuilds.
 xcodebuild -version
 xcrun --sdk macosx --show-sdk-version
 swift test --parallel
-./scripts/build.sh
+MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_APPROVED_DEVELOPMENT_CERTIFICATE' ./scripts/build.sh
 codesign --verify --strict --verbose=2 build/MicLine.app
 open build/MicLine.app
 ```
 
-Set `MICLINE_SIGNING_IDENTITY` to an existing local certificate when needed. The
-build must not silently fall back to ad-hoc signing. Developer ID distribution,
+Set `MICLINE_SIGNING_CERTIFICATE_SHA1` to the exact fingerprint of an approved
+Apple Development identity for local builds; there is no default identity or
+ad-hoc signing fallback. Developer ID distribution,
 notarization, DMG packaging, exact CI secret names and artifact retention are
 documented in [Release builds](docs/RELEASING.md). App Store Connect records are not
 needed for Developer ID distribution. GitHub uses the `xcode-27` preview runner;
