@@ -31,6 +31,7 @@ public final class AudioGraph: ObservableObject {
     private var highPass: AVAudioUnitEQ?
     private var units: [UUID: AVAudioUnit] = [:]
     private var editors: [UUID: NSWindow] = [:]
+    private var editorRequests = EditorRequestTracker()
     private let inputMeter = MeterState()
     private let outputMeter = MeterState()
     private var inputBallistics = MeterBallistics()
@@ -162,6 +163,7 @@ public final class AudioGraph: ObservableObject {
         units.removeAll()
         editors.values.forEach { $0.close() }
         editors.removeAll()
+        editorRequests.clear()
         genericEditorID = nil
         running = false
         monitoring = false
@@ -382,9 +384,19 @@ public final class AudioGraph: ObservableObject {
             return
         }
         if let window = editors[id] { window.makeKeyAndOrderFront(nil); return }
+        guard let request = editorRequests.begin(id) else { return }
+        do {
+            try Self.prepareForEditor(unit)
+        } catch {
+            _ = editorRequests.finish(request, for: id)
+            genericEditorID = id
+            status = "Native controls could not be prepared. Showing generic controls."
+            return
+        }
         unit.withAUAudioUnit { $0.requestViewController { [weak self, weak unit] controller in
             Task { @MainActor in
-                guard let self, let unit, self.units[id] === unit else { return }
+                guard let self, let unit, self.units[id] === unit,
+                      self.editorRequests.finish(request, for: id) else { return }
                 guard let controller else { self.genericEditorID = id; return }
                 let window = NSWindow(contentViewController: controller)
                 window.title = unit.name
@@ -395,6 +407,19 @@ public final class AudioGraph: ObservableObject {
                 window.center(); window.makeKeyAndOrderFront(nil)
             }
         } }
+        Task { [weak self, weak unit] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, let self, let unit, self.units[id] === unit,
+                  self.editorRequests.finish(request, for: id) else { return }
+            self.genericEditorID = id
+            self.status = "Native controls did not respond. Showing generic controls."
+        }
+    }
+
+    static func prepareForEditor(_ unit: AVAudioUnit) throws {
+        try unit.withAUAudioUnit {
+            if !$0.renderResourcesAllocated { try $0.allocateRenderResources() }
+        }
     }
 
     private func applyControls() {
@@ -476,4 +501,23 @@ public final class AudioGraph: ObservableObject {
 enum GraphError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case let .message(text) = self { return text }; return nil }
+}
+
+struct EditorRequestTracker {
+    private var requests: [UUID: UUID] = [:]
+
+    mutating func begin(_ id: UUID) -> UUID? {
+        guard requests[id] == nil else { return nil }
+        let request = UUID()
+        requests[id] = request
+        return request
+    }
+
+    mutating func finish(_ request: UUID, for id: UUID) -> Bool {
+        guard requests[id] == request else { return false }
+        requests[id] = nil
+        return true
+    }
+
+    mutating func clear() { requests.removeAll() }
 }

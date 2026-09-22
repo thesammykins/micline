@@ -228,3 +228,35 @@ import AVFoundation
     let actual = try #require(restored.withAUAudioUnit { $0.parameterTree?.parameter(withAddress: parameter.address)?.value })
     #expect(abs(actual - expected) < 0.01)
 }
+
+@Test @MainActor func editorPreparationAllocatesRenderResourcesAndIsIdempotent() async throws {
+    let plugin = try #require(PluginRegistry.scan().first { $0.name == "AUHipass" })
+    let unit = try await AVAudioUnit.instantiate(with: plugin.componentDescription, options: .loadOutOfProcess)
+    #expect(!unit.withAUAudioUnit { $0.renderResourcesAllocated })
+
+    try AudioGraph.prepareForEditor(unit)
+    #expect(unit.withAUAudioUnit { $0.renderResourcesAllocated })
+
+    try AudioGraph.prepareForEditor(unit)
+    #expect(unit.withAUAudioUnit { $0.renderResourcesAllocated })
+}
+
+@Test func staleEditorCompletionCannotClearNewRequest() {
+    let effect = UUID()
+    var requests = EditorRequestTracker()
+    guard let stale = requests.begin(effect) else { Issue.record("Initial request was rejected"); return }
+    let firstFinished = requests.finish(stale, for: effect)
+    #expect(firstFinished)
+    guard let current = requests.begin(effect) else { Issue.record("Replacement request was rejected"); return }
+
+    let staleFinished = requests.finish(stale, for: effect)
+    let overlapping = requests.begin(effect)
+    let currentFinished = requests.finish(current, for: effect)
+    #expect(!staleFinished)
+    #expect(overlapping == nil)
+    #expect(currentFinished)
+    guard let cancelled = requests.begin(effect) else { Issue.record("Cancellation request was rejected"); return }
+    requests.clear()
+    let cancelledFinished = requests.finish(cancelled, for: effect)
+    #expect(!cancelledFinished)
+}
