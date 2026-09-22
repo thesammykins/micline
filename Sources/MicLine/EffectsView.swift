@@ -72,8 +72,10 @@ struct EffectLibraryView: View {
             if graph.plugins.isEmpty {
                 ContentUnavailableView("No Audio Units found", systemImage: "puzzlepiece.extension",
                     description: Text("Rescan after installing an Audio Unit effect."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if matches.isEmpty {
                 ContentUnavailableView.search(text: search)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(matches) { plugin in
                     HStack {
