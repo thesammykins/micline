@@ -5,6 +5,15 @@ effects, and send the filtered signal to BlackHole for your call or recording ap
 Gain, low cut, live levels and bypass stay close at hand in a compact window and
 menu-bar popover. This is a development app, not a complete Wave Link replacement.
 
+If MicLine is useful to you, you can support its development.
+
+<a href="https://ko-fi.com/sammykins/tip"><img src="docs/images/kofi-support.avif" alt="Support MicLine on Ko-fi" height="32"></a>
+
+<!-- Unmodified official Ko-fi creator-kit button, retrieved 2026-09-22.
+Source: https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue.avif
+Permission/provenance: https://more.ko-fi.com/brand-assets and https://help.ko-fi.com/hc/en-us/articles/360021025553-How-to-use-Ko-fi-with-Github
+SHA-256: 2bdae72d7087b7ab46de81154c12cf5cdf42999155cc7c56592969ea5b8a7083 -->
+
 ## Install and use
 
 1. Install **BlackHole 2ch** separately from [Existential Audio](https://existential.audio/blackhole/).
@@ -81,8 +90,8 @@ Bundling/integration beyond the external device boundary needs licensing review.
 ## Build and test
 
 Requires Apple silicon, macOS 27 and Xcode 27 selected with `xcode-select`. SwiftPM
-has no external dependencies. Keep bundle ID `com.sammy.micline` and signing identity
-stable so microphone permission survives rebuilds.
+pins the official Sparkle 2.10.0 dependency. Keep bundle ID `com.sammy.micline` and
+signing identity stable so microphone permission survives rebuilds.
 
 ```sh
 xcodebuild -version
