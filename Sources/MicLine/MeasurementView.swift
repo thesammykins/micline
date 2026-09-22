@@ -28,15 +28,17 @@ struct MeasurementView: View {
                 .font(.callout).foregroundStyle(.secondary)
             Picker("Consumer input", selection: $consumerUID) {
                 Text("Choose virtual input…").tag("")
-                ForEach(graph.inputs.filter(\.isVirtual)) { Text($0.name).tag($0.uid) }
+                ForEach(matchingConsumers) { Text($0.name).tag($0.uid) }
             }
+            .disabled(task != nil)
             Picker("Stimulus speaker", selection: $speakerUID) {
                 Text("Choose speaker…").tag("")
-                ForEach(graph.outputs.filter { !$0.isVirtual }) { Text($0.name).tag($0.uid) }
+                ForEach(physicalSpeakers) { Text($0.name).tag($0.uid) }
             }
-            if graph.selectedOutput?.isVirtual != true {
+            .disabled(task != nil)
+            if let issue = routeConfigurationIssue {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("A virtual processed output must be selected before this check can run.", systemImage: "exclamationmark.triangle.fill")
+                    Label(issue, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     HStack {
                         Button("Cancel") { dismiss() }
@@ -44,6 +46,9 @@ struct MeasurementView: View {
                     }
                 }
                 .padding(12).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            } else if graph.running || graph.loading {
+                Label("Stop processing and wait for audio changes to finish before measuring.", systemImage: "pause.circle")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Text(message).textSelection(.enabled).font(.callout)
             if let report {
@@ -66,7 +71,7 @@ struct MeasurementView: View {
                     Button("Cancel measurement") { task?.cancel() }
                 } else {
                     Button("Play bursts and measure") {
-                        guard let consumer = graph.inputs.first(where: { $0.uid == consumerUID }), let speaker = graph.outputs.first(where: { $0.uid == speakerUID }) else { return }
+                        guard preflightIssue == nil, let consumer = selectedConsumer, let speaker = selectedSpeaker else { return }
                         report = nil
                         message = "Running 20 probes… Keep other audio quiet. You can cancel at any time."
                         task = Task {
@@ -75,10 +80,58 @@ struct MeasurementView: View {
                             task = nil
                         }
                     }.buttonStyle(.borderedProminent)
-                        .disabled(graph.running || graph.loading || graph.selectedOutput?.isVirtual != true || consumerUID.isEmpty || speakerUID.isEmpty)
+                        .disabled(preflightIssue != nil)
                 }
             }
         }.padding(28).frame(width: 580)
+            .onAppear { selectMatchingConsumerIfNeeded() }
+            .onChange(of: graph.settings.outputUID) { _, _ in selectMatchingConsumerIfNeeded() }
+            .onChange(of: graph.inputs) { _, _ in selectMatchingConsumerIfNeeded() }
             .onDisappear { task?.cancel() }
+    }
+
+    private var matchingConsumers: [AudioDevice] {
+        guard let output = graph.selectedOutput else { return [] }
+        return graph.inputs.filter { $0.isVirtual && $0.inputChannels > 0 && $0.uid == output.uid }
+    }
+
+    private var physicalSpeakers: [AudioDevice] {
+        graph.outputs.filter { !$0.isVirtual && $0.outputChannels > 0 }
+    }
+
+    private var selectedConsumer: AudioDevice? {
+        matchingConsumers.first { $0.uid == consumerUID }
+    }
+
+    private var selectedSpeaker: AudioDevice? {
+        physicalSpeakers.first { $0.uid == speakerUID }
+    }
+
+    private var routeConfigurationIssue: String? {
+        guard let input = graph.selectedInput else { return "Choose a microphone in Audio Setup." }
+        guard !input.isVirtual else { return "Measurement requires a physical microphone." }
+        guard let output = graph.selectedOutput else { return "Choose a processed output in Audio Setup." }
+        guard output.isVirtual else { return "Measurement requires a virtual processed output." }
+        if let issue = graph.routeIssue { return issue }
+        guard let consumer = selectedConsumer else {
+            return matchingConsumers.isEmpty
+                ? "The selected virtual output has no matching consumer input. Check Audio Setup."
+                : "Choose the matching virtual consumer input."
+        }
+        guard input.sampleRate == consumer.sampleRate else {
+            return "The microphone and virtual consumer sample rates must match. Check Audio Setup."
+        }
+        guard selectedSpeaker != nil else { return "Choose a physical stimulus speaker." }
+        return nil
+    }
+
+    private var preflightIssue: String? {
+        if graph.running || graph.loading { return "Stop processing before measuring." }
+        return routeConfigurationIssue
+    }
+
+    private func selectMatchingConsumerIfNeeded() {
+        guard selectedConsumer == nil else { return }
+        consumerUID = matchingConsumers.first?.uid ?? ""
     }
 }

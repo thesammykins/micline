@@ -33,6 +33,7 @@ struct MicLineApp: App {
     @State private var didProbe = false
     @State private var didAttemptStartup = false
     private let fixture = PresentationFixture.current
+    private let presentationDefaults = UserDefaults(suiteName: "com.sammy.micline.presentation")!
 
     init() {
         let defaults: UserDefaults
@@ -51,6 +52,13 @@ struct MicLineApp: App {
             if let fixture {
                 if fixture == .stopped {
                     ProductionStoppedFixtureView(graph: graph)
+                        .defaultAppStorage(presentationDefaults)
+                } else if fixture == .onboarding {
+                    ProductionOnboardingFixtureView(graph: graph)
+                        .defaultAppStorage(presentationDefaults)
+                } else if fixture == .measurement {
+                    ProductionMeasurementFixtureView(graph: graph)
+                        .defaultAppStorage(presentationDefaults)
                 } else {
                     PresentationFixtureView(fixture: fixture)
                 }
@@ -258,7 +266,10 @@ struct MainView: View {
                         .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 76)
                         .disabled(!graph.settings.highPassEnabled)
                     Text("Hz").foregroundStyle(.secondary)
-                    Stepper("", value: $graph.settings.highPassHz, in: 20...300, step: 1).labelsHidden()
+                    Stepper("Low-cut frequency", value: $graph.settings.highPassHz, in: 20...300, step: 1)
+                        .labelsHidden()
+                        .accessibilityLabel("Low-cut frequency")
+                        .accessibilityValue("\(Int(graph.settings.highPassHz)) hertz")
                 }
             }
             .frame(width: 220)
@@ -363,13 +374,27 @@ struct OnboardingView: View {
     @ObservedObject var graph: AudioGraph
     @Binding var isPresented: Bool
     @Binding var completedSetup: Bool
+    var height: CGFloat = 680
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Set up MicLine").font(.largeTitle.bold())
             Text("Choose a microphone and a virtual processed output. MicLine will request microphone access when processing starts.")
                 .foregroundStyle(.secondary)
-            ScrollView { AudioSetupView(graph: graph) }
+            ScrollView {
+                VStack(spacing: 20) {
+                    AudioSetupView(graph: graph)
+                    GroupBox("Optional startup") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            LoginItemToggle()
+                            Divider()
+                            AutomaticProcessingToggle()
+                        }
+                        .padding(8)
+                    }
+                }
+                .padding(.bottom, 4)
+            }
             HStack {
                 Spacer()
                 Button("Continue") {
@@ -380,6 +405,6 @@ struct OnboardingView: View {
                 .disabled(graph.selectedInput == nil || graph.selectedOutput?.isVirtual != true)
             }
         }
-        .padding(28).frame(width: 620, height: 680)
+        .padding(28).frame(width: 620, height: height)
     }
 }

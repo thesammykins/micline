@@ -12,6 +12,8 @@ enum PresentationFixture: String {
     case delayed
     case stopped
     case recovery
+    case onboarding
+    case measurement
     case largeText = "large-text"
 
     static var current: PresentationFixture? {
@@ -19,6 +21,42 @@ enum PresentationFixture: String {
               let index = CommandLine.arguments.firstIndex(of: "--presentation-fixture"),
               CommandLine.arguments.indices.contains(index + 1) else { return nil }
         return PresentationFixture(rawValue: CommandLine.arguments[index + 1])
+    }
+}
+
+/// These wrappers exercise the production views while preventing every control
+/// from handling input. The app also supplies the presentation-only defaults
+/// suite, so merely rendering them cannot change normal preferences.
+struct ProductionOnboardingFixtureView: View {
+    @ObservedObject var graph: AudioGraph
+    @State private var presented = true
+    @State private var completed = false
+
+    var body: some View {
+        fixtureSurface {
+            OnboardingView(graph: graph, isPresented: $presented, completedSetup: $completed, height: 840)
+        }
+    }
+}
+
+struct ProductionMeasurementFixtureView: View {
+    @ObservedObject var graph: AudioGraph
+
+    var body: some View {
+        fixtureSurface {
+            MeasurementView(graph: graph, openAudioSetup: {})
+        }
+    }
+}
+
+private func fixtureSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    ZStack(alignment: .top) {
+        content().disabled(true).allowsHitTesting(false)
+        Label("PRODUCTION LAYOUT FIXTURE · AUDIO DISABLED", systemImage: "paintbrush.pointed")
+            .font(.caption.bold()).foregroundStyle(.purple)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.top, 8)
     }
 }
 
@@ -158,7 +196,7 @@ struct FixtureSettingsUnavailableView: View {
     var body: some View {
         ContentUnavailableView("Settings unavailable in presentation fixtures",
             systemImage: "paintbrush.pointed",
-            description: Text("This non-audio launch cannot read or change normal MicLine preferences."))
+            description: Text("This non-audio launch cannot change normal MicLine preferences or start audio."))
             .frame(width: 480, height: 320)
     }
 }

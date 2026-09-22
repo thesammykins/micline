@@ -175,7 +175,7 @@ struct AboutSettingsView: View {
                 }.padding(8)
             }
             Spacer()
-            Text("© 2026 Sammy Myers").foregroundStyle(.secondary)
+            Text("Copyright 2026 Sammykins").foregroundStyle(.secondary)
         }
         .padding(28)
     }
@@ -221,7 +221,11 @@ struct AudioSetupView: View {
                         Picker("Monitor output", selection: $monitorOutputUID) {
                             Text("None").tag("")
                             ForEach(monitorOutputs) { Text($0.name).tag($0.uid) }
-                        }.labelsHidden().disabled(previewMissing || graph.loading)
+                        }
+                        .labelsHidden().disabled(previewMissing || graph.loading)
+                        .onChange(of: monitorOutputUID) { _, _ in
+                            if graph.monitoring { graph.stopMonitoring() }
+                        }
                     }
                 }
             }
