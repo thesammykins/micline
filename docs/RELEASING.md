@@ -1,9 +1,12 @@
 # Releasing MicLine
 
-MicLine's release automation produces a signed disk image as a private GitHub
-Actions artifact. It does not publish a GitHub Release, push a tag, deploy, or
-upload the app anywhere except Apple's notarization service when explicitly
-requested.
+MicLine's release automation prepares a signed disk image on the runner only.
+Artifact upload is disabled: GitHub Actions artifacts are not private storage
+once a repository becomes public, including artifacts retained before that change.
+Retrieving signed output requires separately approved access-controlled storage
+or explicit publication authorization. The workflow does not publish a GitHub
+Release, push a tag, deploy, or upload the app anywhere except Apple's notarization
+service when explicitly requested.
 
 ## Platform requirements
 
@@ -174,7 +177,7 @@ is independently opt-in; enabling it requires all three notary secrets. The job:
 2. imports the certificate into an ephemeral keychain;
 3. builds the hardened, timestamped app and branded DMG;
 4. optionally notarizes and staples the DMG;
-5. uploads only the DMG and SHA-256 file with 14-day retention; and
+5. computes the DMG SHA-256 without uploading or retaining either file; and
 6. removes the API key file, certificate file, and ephemeral keychain in an
    unconditional cleanup step.
 
@@ -334,7 +337,9 @@ for the 2.10 tool behavior used here.
 - **Supply-chain substitution:** Sparkle is exact-version pinned in
   `Package.resolved`; the bundled framework is re-signed with the host identity
   and verified as nested code. Dependency upgrades require review.
-- **Unintended publication:** CI retains a private artifact for 14 days and has
+- **Unintended publication:** CI has no artifact upload step and has
   `contents: read`. It does not create a release, tag, feed, or deployment.
+  Before changing repository visibility, confirm no retained artifacts exist,
+  including those produced by older workflow revisions.
 - **Privacy drift:** update telemetry/system profiling is disabled. Any future
   authenticated update service needs a separate privacy and credential review.

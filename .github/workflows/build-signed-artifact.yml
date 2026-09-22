@@ -147,16 +147,6 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: shasum -a 256 "build/MicLine-$RELEASE_VERSION.dmg" > "build/MicLine-$RELEASE_VERSION.dmg.sha256"
 
-      - name: Upload signed artifact only
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: MicLine-${{ inputs.version }}-${{ github.run_id }}
-          path: |
-            build/MicLine-${{ inputs.version }}.dmg
-            build/MicLine-${{ inputs.version }}.dmg.sha256
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Remove signing credentials and ephemeral keychain
         if: ${{ always() }}
         run: |
