@@ -46,11 +46,13 @@ validate_update_metadata() {
               components.scheme?.lowercased() == "https",
               components.host?.isEmpty == false,
               components.user == nil,
-              components.password == nil else {
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil else {
             exit(1)
         }
     ' "$feed_url"; then
-        die "MICLINE_SPARKLE_FEED_URL must include a host and must not embed credentials"
+        die "MICLINE_SPARKLE_FEED_URL must include a host and must not contain credentials, a query, or a fragment"
     fi
 
     [[ -n "$public_key" ]] || die "MICLINE_SPARKLE_PUBLIC_ED_KEY is required for developer-id builds"

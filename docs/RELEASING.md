@@ -58,7 +58,8 @@ Developer ID mode always enables the hardened runtime and a trusted timestamp.
 The script never falls back to ad-hoc signing. It also requires the release
 version, build number, and public Sparkle metadata:
 
-- `MICLINE_SPARKLE_FEED_URL`: an HTTPS appcast URL without embedded credentials.
+- `MICLINE_SPARKLE_FEED_URL`: an HTTPS appcast URL without embedded credentials,
+  query parameters, or a fragment.
 - `MICLINE_SPARKLE_PUBLIC_ED_KEY`: the existing 32-byte Ed25519 public key,
   base64 encoded.
 
@@ -144,6 +145,17 @@ unset makes the manually dispatched job fail explicitly before loading signing
 credentials. The workflow validates the host, SDK, version, architecture, and
 public Sparkle metadata before the certificate or notary credentials are loaded.
 
+The prepared hosted workflow currently must decode the PKCS#12 certificate and,
+when notarization is requested, the App Store Connect key into temporary files
+because `security import` and `notarytool --key` consume paths. Current authority
+prohibits certificate, password, and private-key files, including temporary ones.
+Therefore repository variable `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES` must
+remain unset: the job fails before loading secrets. Set it only after Sammy
+separately approves this exact ephemeral-file mechanism, or replace the mechanism
+with a verified supported approach that does not create those files. Choosing a
+secret scope or enabling `MICLINE_ENABLE_SIGNED_RELEASE` is not that approval.
+The random ephemeral-keychain password remains only in the step process memory.
+
 To build an artifact, manually dispatch **Build signed release artifact**, enter
 the version and integer build number, and type `SIGN_ARTIFACT_ONLY`. Notarization
 is independently opt-in; enabling it requires all three notary secrets. The job:
@@ -194,8 +206,9 @@ and [sandboxing/XPC guidance](https://sparkle-project.org/documentation/sandboxi
 
 - **Credential theft:** certificate, PKCS#12 password, App Store Connect key, and
   Sparkle private key can authorize malicious releases. Keep them out of PR jobs,
-  logs, source, artifacts, and prompts; use a reviewed environment and ephemeral
-  files/keychains with unconditional cleanup.
+  logs, source, artifacts, and prompts. The hosted signing path is additionally
+  blocked because its tools require temporary P12/P8 files; cleanup is not a
+  substitute for approval to create them.
 - **Untrusted workflow changes:** pull requests receive no signing secrets. The
   credentialed workflow is manual, main-only, explicitly enabled, confirmation
   gated, and artifact-only. Review workflow changes before enabling it.

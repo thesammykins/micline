@@ -36,6 +36,21 @@ private let validPublicKey = Data(repeating: 0xA5, count: 32).base64EncodedStrin
     }
 }
 
+@Test func updateConfigurationRejectsQueryAndFragmentMetadata() {
+    #expect(throws: MicLineUpdateConfiguration.Issue.unsupportedFeedURLComponents) {
+        try MicLineUpdateConfiguration(infoDictionary: [
+            "SUFeedURL": "https://updates.example.com/appcast.xml?token=secret",
+            "SUPublicEDKey": validPublicKey,
+        ])
+    }
+    #expect(throws: MicLineUpdateConfiguration.Issue.unsupportedFeedURLComponents) {
+        try MicLineUpdateConfiguration(infoDictionary: [
+            "SUFeedURL": "https://updates.example.com/appcast.xml#channel",
+            "SUPublicEDKey": validPublicKey,
+        ])
+    }
+}
+
 @Test func updateConfigurationRequiresAnEd25519SizedPublicKey() {
     #expect(throws: MicLineUpdateConfiguration.Issue.invalidPublicKey) {
         try MicLineUpdateConfiguration(infoDictionary: [

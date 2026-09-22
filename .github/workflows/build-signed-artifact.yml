@@ -45,6 +45,7 @@ jobs:
           MICLINE_VERSION: ${{ inputs.version }}
           MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
           MICLINE_ENABLE_SIGNED_RELEASE: ${{ vars.MICLINE_ENABLE_SIGNED_RELEASE }}
+          MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES: ${{ vars.MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES }}
           MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: |
@@ -54,6 +55,11 @@ jobs:
             exit 1
           }
           ./scripts/build.sh --check-release-configuration
+          : "${MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES:?credential-file handling is not approved}"
+          [[ "$MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES" == "true" ]] || {
+            echo "Signed CI remains blocked: security import and notarytool require temporary credential files" >&2
+            exit 1
+          }
 
       - name: Import Developer ID certificate into an ephemeral keychain
         env:
@@ -65,13 +71,10 @@ jobs:
 
           KEYCHAIN_PATH="$RUNNER_TEMP/micline-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/micline-signing.p12"
-          PASSWORD_PATH="$RUNNER_TEMP/micline-keychain-password"
-          openssl rand -hex 32 > "$PASSWORD_PATH"
-          chmod 600 "$PASSWORD_PATH"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
           printf '%s' "$CERTIFICATE_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
           chmod 600 "$CERTIFICATE_PATH"
 
-          KEYCHAIN_PASSWORD="$(cat "$PASSWORD_PATH")"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -161,5 +164,4 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
           rm -f \
             "$RUNNER_TEMP/micline-signing.p12" \
-            "$RUNNER_TEMP/micline-keychain-password" \
             "$RUNNER_TEMP/AuthKey.p8"

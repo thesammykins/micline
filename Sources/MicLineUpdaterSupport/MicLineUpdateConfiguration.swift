@@ -5,6 +5,7 @@ public struct MicLineUpdateConfiguration: Equatable, Sendable {
         case missingFeedURL
         case insecureFeedURL
         case embeddedFeedCredentials
+        case unsupportedFeedURLComponents
         case missingPublicKey
         case invalidPublicKey
     }
@@ -23,6 +24,9 @@ public struct MicLineUpdateConfiguration: Equatable, Sendable {
         }
         guard feedURL.user == nil, feedURL.password == nil else {
             throw Issue.embeddedFeedCredentials
+        }
+        guard feedURL.query == nil, feedURL.fragment == nil else {
+            throw Issue.unsupportedFeedURLComponents
         }
 
         guard let keyValue = infoDictionary["SUPublicEDKey"] as? String else {
