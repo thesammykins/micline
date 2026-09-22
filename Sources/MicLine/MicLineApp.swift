@@ -59,6 +59,9 @@ struct MicLineApp: App {
                 } else if fixture == .measurement {
                     ProductionMeasurementFixtureView(graph: graph)
                         .defaultAppStorage(presentationDefaults)
+                } else if fixture == .genericControls {
+                    ProductionGenericControlsFixtureView(graph: graph)
+                        .defaultAppStorage(presentationDefaults)
                 } else {
                     PresentationFixtureView(fixture: fixture)
                 }

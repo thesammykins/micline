@@ -1,4 +1,5 @@
 import AppKit
+import AudioToolbox
 import Foundation
 import SwiftUI
 import MicLineCore
@@ -14,6 +15,7 @@ enum PresentationFixture: String {
     case recovery
     case onboarding
     case measurement
+    case genericControls = "generic-controls"
     case largeText = "large-text"
 
     static var current: PresentationFixture? {
@@ -45,6 +47,47 @@ struct ProductionMeasurementFixtureView: View {
     var body: some View {
         fixtureSurface {
             MeasurementView(graph: graph, openAudioSetup: {})
+        }
+    }
+}
+
+struct ProductionGenericControlsFixtureView: View {
+    @ObservedObject var graph: AudioGraph
+
+    private let parameters: [AUParameter] = {
+        let threshold = AUParameterTree.createParameter(
+            withIdentifier: "threshold",
+            name: "Threshold",
+            address: 1,
+            min: -60,
+            max: 0,
+            unit: .customUnit,
+            unitName: "dB",
+            flags: [.flag_IsReadable, .flag_IsWritable],
+            valueStrings: nil,
+            dependentParameters: nil
+        )
+        threshold.value = -12.5
+        let response = AUParameterTree.createParameter(
+            withIdentifier: "response",
+            name: "Response",
+            address: 2,
+            min: -20,
+            max: -1,
+            unit: .customUnit,
+            unitName: "units",
+            flags: [.flag_IsReadable, .flag_IsWritable, .flag_DisplayExponential],
+            valueStrings: nil,
+            dependentParameters: nil
+        )
+        response.value = -8
+        return [threshold, response]
+    }()
+
+    var body: some View {
+        fixtureSurface {
+            GenericAUControlsView(graph: graph, presentedParameters: parameters)
+                .padding(.top, 40)
         }
     }
 }

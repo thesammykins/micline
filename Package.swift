@@ -15,6 +15,7 @@ let package = Package(
     targets: [
         .target(name: "AudioSupport", publicHeadersPath: "include"),
         .target(name: "MicLineCore", dependencies: ["AudioSupport"]),
+        .target(name: "MicLineUI"),
         .target(name: "MicLineUpdaterSupport"),
         .target(
             name: "MicLineUpdater",
@@ -25,7 +26,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MicLine",
-            dependencies: ["MicLineCore", "MicLineUpdater"],
+            dependencies: ["MicLineCore", "MicLineUI", "MicLineUpdater"],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",
@@ -35,6 +36,7 @@ let package = Package(
         ),
         .executableTarget(name: "MicLineMeasure", dependencies: ["MicLineCore"]),
         .testTarget(name: "MicLineCoreTests", dependencies: ["MicLineCore", "AudioSupport"]),
+        .testTarget(name: "MicLineUITests", dependencies: ["MicLineUI"]),
         .testTarget(name: "MicLineUpdaterSupportTests", dependencies: ["MicLineUpdaterSupport"]),
     ],
     swiftLanguageModes: [.v5]

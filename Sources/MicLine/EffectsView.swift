@@ -1,6 +1,7 @@
 import AudioToolbox
 import SwiftUI
 import MicLineCore
+import MicLineUI
 
 struct EffectRow: View {
     @ObservedObject var graph: AudioGraph
@@ -104,7 +105,10 @@ struct EffectLibraryView: View {
 
 struct GenericAUControlsView: View {
     @ObservedObject var graph: AudioGraph
+    var presentedParameters: [AUParameter]? = nil
     @State private var openingValues: [AUParameterAddress: AUValue] = [:]
+
+    private var parameters: [AUParameter] { presentedParameters ?? graph.parameters }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -118,13 +122,13 @@ struct GenericAUControlsView: View {
                 Button("Done") { graph.genericEditorID = nil }.keyboardShortcut(.defaultAction)
             }
             Divider()
-            if graph.parameters.isEmpty {
+            if parameters.isEmpty {
                 ContentUnavailableView("No editable parameters", systemImage: "slider.horizontal.3",
                     description: Text("This Audio Unit did not publish generic controls."))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 14) {
-                        ForEach(graph.parameters, id: \.address) { parameter in
+                        ForEach(parameters, id: \.address) { parameter in
                             parameterCard(parameter)
                         }
                     }
@@ -133,7 +137,7 @@ struct GenericAUControlsView: View {
         }
         .padding(24).frame(width: 620, height: 560)
         .task {
-            openingValues = Dictionary(uniqueKeysWithValues: graph.parameters.map { ($0.address, $0.value) })
+            openingValues = Dictionary(uniqueKeysWithValues: parameters.map { ($0.address, $0.value) })
         }
     }
 
@@ -193,64 +197,24 @@ struct GenericAUControlsView: View {
     }
 
     private func format(_ value: AUValue, parameter: AUParameter) -> String {
-        if parameter.flags.contains(.flag_ValuesHaveStrings) {
-            var suppliedValue = value
-            let supplied = parameter.string(fromValue: &suppliedValue)
-            if !supplied.isEmpty { return supplied }
-        }
-        return String(format: "%+.3f", value)
+        AUParameterPresentation.string(value, parameter: parameter)
     }
 
     private func displayBinding(_ parameter: AUParameter) -> Binding<Double> {
         Binding(get: {
-            let naturalLower = Double(parameter.minValue)
-            let naturalUpper = Double(parameter.maxValue)
-            let naturalValue = Double(parameter.value)
-            let lower = transformed(Double(parameter.minValue), flags: parameter.flags)
-            let upper = transformed(Double(parameter.maxValue), flags: parameter.flags)
-            guard naturalValue.isFinite else { return 0 }
-            guard lower.isFinite, upper.isFinite, upper != lower else {
-                return min(1, max(0, (naturalValue - naturalLower) / (naturalUpper - naturalLower)))
-            }
-            let value = transformed(naturalValue, flags: parameter.flags)
-            guard value.isFinite else { return 0 }
-            return min(1, max(0, (value - lower) / (upper - lower)))
+            AUParameterPresentation.linearPosition(
+                for: Double(parameter.value),
+                minimum: Double(parameter.minValue),
+                maximum: Double(parameter.maxValue),
+                flags: parameter.flags
+            )
         }, set: { position in
-            let naturalLower = Double(parameter.minValue)
-            let naturalUpper = Double(parameter.maxValue)
-            let lower = transformed(Double(parameter.minValue), flags: parameter.flags)
-            let upper = transformed(Double(parameter.maxValue), flags: parameter.flags)
-            guard lower.isFinite, upper.isFinite, upper != lower else {
-                parameter.value = AUValue(naturalLower + min(1, max(0, position)) * (naturalUpper - naturalLower))
-                return
-            }
-            let displayed = lower + min(1, max(0, position)) * (upper - lower)
-            let value = inverseTransformed(displayed, flags: parameter.flags)
-            parameter.value = AUValue(min(naturalUpper, max(naturalLower, value)))
+            parameter.value = AUValue(AUParameterPresentation.parameterValue(
+                at: position,
+                minimum: Double(parameter.minValue),
+                maximum: Double(parameter.maxValue),
+                flags: parameter.flags
+            ))
         })
-    }
-
-    private func transformed(_ value: Double, flags: AudioUnitParameterOptions) -> Double {
-        switch flags.intersection(.flag_DisplayMask) {
-        case .flag_DisplaySquareRoot: return value.sign == .minus ? -sqrt(abs(value)) : sqrt(value)
-        case .flag_DisplaySquared: return value.sign == .minus ? -(value * value) : value * value
-        case .flag_DisplayCubed: return value * value * value
-        case .flag_DisplayCubeRoot: return value.sign == .minus ? -pow(abs(value), 1.0 / 3.0) : pow(value, 1.0 / 3.0)
-        case .flag_DisplayExponential: return exp(value)
-        case .flag_DisplayLogarithmic: return log(max(value, 0.00001))
-        default: return value
-        }
-    }
-
-    private func inverseTransformed(_ value: Double, flags: AudioUnitParameterOptions) -> Double {
-        switch flags.intersection(.flag_DisplayMask) {
-        case .flag_DisplaySquareRoot: return value.sign == .minus ? -(value * value) : value * value
-        case .flag_DisplaySquared: return value.sign == .minus ? -sqrt(abs(value)) : sqrt(value)
-        case .flag_DisplayCubed: return value.sign == .minus ? -pow(abs(value), 1.0 / 3.0) : pow(value, 1.0 / 3.0)
-        case .flag_DisplayCubeRoot: return value * value * value
-        case .flag_DisplayExponential: return log(max(value, 0.00001))
-        case .flag_DisplayLogarithmic: return exp(value)
-        default: return value
-        }
     }
 }
