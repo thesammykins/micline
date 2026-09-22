@@ -165,8 +165,8 @@ is independently opt-in; enabling it requires all three notary secrets. The job:
 3. builds the hardened, timestamped app and branded DMG;
 4. optionally notarizes and staples the DMG;
 5. uploads only the DMG and SHA-256 file with 14-day retention; and
-6. removes the key, certificate, password file, and keychain in an unconditional
-   cleanup step.
+6. removes the API key file, certificate file, and ephemeral keychain in an
+   unconditional cleanup step.
 
 The workflow has only `contents: read` permission. Creating tags, GitHub Releases,
 or public downloads remains a separate human-authorized action.
@@ -189,11 +189,14 @@ the app as `Contents/Resources/Sparkle-LICENSE.txt`.
 The app embeds `Sparkle.framework` under `Contents/Frameworks` and signs Sparkle's
 nested XPC services, helper, updater app, and framework inside-out with the same
 identity before signing the host app. The script does not use `codesign --deep`
-for signing. MicLine currently loads AUv2 plugins out of process, so the hardened
-app does **not** receive `com.apple.security.cs.disable-library-validation` or
-broader JIT/executable-page entitlements. Revisit that tradeoff only if actual
-in-process third-party code loading is introduced and verified to fail under the
-hardened runtime.
+for signing. MicLine requests `.loadOutOfProcess` when instantiating AUv2 plugins,
+but AUv2 plugins may still execute in the host process; this is not a crash-
+isolation guarantee. The hardened app therefore receives no preemptive
+`com.apple.security.cs.disable-library-validation`, JIT, or executable-page
+entitlement expansion. Validate supported third-party AUs in the final hardened
+Developer ID build. If a real plugin fails because of library validation, stop
+and review the narrowest entitlement change and its security tradeoff rather
+than weakening the release globally.
 
 A private GitHub repository is not a usable public Sparkle feed. Choose a public
 HTTPS signed feed/artifact origin or a dedicated authenticated distribution
@@ -201,6 +204,109 @@ service. Never embed a GitHub token or other feed credential in the app. Follow
 Sparkle's official [security guidance](https://sparkle-project.org/documentation/security-and-reliability/),
 [programmatic setup](https://sparkle-project.org/documentation/programmatic-setup/),
 and [sandboxing/XPC guidance](https://sparkle-project.org/documentation/sandboxing/).
+
+## Prepare and validate an appcast (blocked)
+
+This is a local preparation procedure, not publication authorization. Do not run
+the signing commands until an existing MicLine Sparkle Ed25519 key is authorized
+for use from the operator's login Keychain. Do not run `generate_keys` without
+`-p`, use `-x` or `-f`, pass `--ed-key-file`, or create, import, export, or rotate
+a key as part of this procedure. Never place the private key in source, a release
+directory, an environment variable, a prompt, or a log.
+
+Prerequisites:
+
+- a final hardened, Developer ID-signed, notarized, and stapled MicLine archive;
+- its final `CFBundleVersion` and `CFBundleShortVersionString`;
+- an approved public HTTPS feed and download origin without credentials, query,
+  or fragment components;
+- the name of the existing Keychain account holding MicLine's Sparkle key; and
+- explicit authorization to use that Keychain item. Keychain access may display
+  a system consent prompt and must fail closed if access is denied.
+
+Materialize the pinned package artifact, then verify that the tools come from the
+exact Sparkle 2.10.0 revision recorded in `Package.resolved`:
+
+```sh
+swift build --product MicLine -c release
+
+SPARKLE_VERSION=2.10.0
+SPARKLE_REVISION=eef1a539a373c1f1a320624b1130fc5de7b2e100
+SPARKLE_BIN="$PWD/.build/artifacts/sparkle/Sparkle/bin"
+
+test "$(git -C .build/checkouts/Sparkle describe --tags --exact-match HEAD)" = "$SPARKLE_VERSION"
+test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
+test -x "$SPARKLE_BIN/generate_keys"
+test -x "$SPARKLE_BIN/generate_appcast"
+test -x "$SPARKLE_BIN/sign_update"
+```
+
+Work in a disposable local staging directory outside the repository because
+`generate_appcast` writes or updates `appcast.xml`, may create deltas, and may
+move superseded files to `old_updates/`. Copy only the final archive and optional
+matching release-notes file into it. Before signing, read only the existing
+public key and require it to match the key embedded in the final app:
+
+```sh
+SPARKLE_ACCOUNT='EXISTING_MICLINE_KEYCHAIN_ACCOUNT'
+STAGING_DIR='/absolute/path/to/private/micline-appcast-staging'
+ARCHIVE="$STAGING_DIR/MicLine-0.1.0.dmg"
+APP='build/MicLine.app'
+
+KEYCHAIN_PUBLIC="$($SPARKLE_BIN/generate_keys --account "$SPARKLE_ACCOUNT" -p)"
+BUNDLED_PUBLIC="$(plutil -extract SUPublicEDKey raw "$APP/Contents/Info.plist")"
+test -n "$KEYCHAIN_PUBLIC"
+test "$KEYCHAIN_PUBLIC" = "$BUNDLED_PUBLIC"
+codesign --verify --deep --strict --verbose=2 "$APP"
+xcrun stapler validate "$APP"
+xcrun stapler validate "$ARCHIVE"
+```
+
+After all prerequisites and credential use are authorized, generate a local
+candidate using Keychain lookup. Omit `--ed-key-file`; the tool then uses the
+named Keychain account. This command signs update archives and the required
+signed feed because MicLine sets both `SUVerifyUpdateBeforeExtraction` and
+`SURequireSignedFeed`:
+
+```sh
+DOWNLOAD_PREFIX='https://updates.example.com/micline/'
+"$SPARKLE_BIN/generate_appcast" \
+  --account "$SPARKLE_ACCOUNT" \
+  --download-url-prefix "$DOWNLOAD_PREFIX" \
+  "$STAGING_DIR"
+```
+
+Validate the generated XML, its embedded feed signature, and the archive
+signature and length before any upload. `sign_update --verify` performs
+verification only; it still reads the corresponding key pair from Keychain.
+
+```sh
+APPCAST="$STAGING_DIR/appcast.xml"
+xmllint --noout "$APPCAST"
+"$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$APPCAST"
+
+ARCHIVE_SIGNATURE="$(xmllint --xpath \
+  "string((//*[local-name()='enclosure'])[1]/@*[local-name()='edSignature'])" \
+  "$APPCAST")"
+DECLARED_LENGTH="$(xmllint --xpath \
+  "string((//*[local-name()='enclosure'])[1]/@length)" "$APPCAST")"
+test -n "$ARCHIVE_SIGNATURE"
+test "$DECLARED_LENGTH" = "$(stat -f %z "$ARCHIVE")"
+"$SPARKLE_BIN/sign_update" \
+  --account "$SPARKLE_ACCOUNT" \
+  --verify "$ARCHIVE" \
+  "$ARCHIVE_SIGNATURE"
+```
+
+Inspect the generated item before release: enclosure and release-note URLs must
+use the approved public origins; version/build values must match the archive;
+the minimum system version must remain 27; and hardware requirements must not
+claim unsupported Intel runtime compatibility. Test an update from the prior
+released version against an authorized staging origin before changing the live
+feed. Uploading archives, appcast, deltas, or release notes—and modifying the
+live feed—are separate external publication actions requiring explicit approval.
+See Sparkle's official [publishing procedure](https://sparkle-project.org/documentation/publishing/)
+for the 2.10 tool behavior used here.
 
 ## Release threat model
 
