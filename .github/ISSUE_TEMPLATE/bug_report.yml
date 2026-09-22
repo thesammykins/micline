@@ -1,0 +1,66 @@
+name: MicLine problem
+description: Report an audio, effect, interface, installation or update problem.
+title: "[Problem]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach microphone recordings, presets/plugin state, certificates,
+        keys, raw Console logs or personal paths. Review exported diagnostics and
+        crop screenshots before attaching. This repository requires authorized access.
+        MicLine does not submit this form for you.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Microphone / BlackHole routing
+        - Physical monitoring
+        - Audio Unit effect / editor
+        - Meters / interface / accessibility
+        - Installation / startup / Dock
+        - Updates / signing
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: App and environment
+      description: App/build/macOS versions. Add hardware model and driver version if relevant, without custom device names or unique IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1. Select ...
+        2. Start / change ...
+        3. Observe ...
+      description: Include selected route type, effect order and whether the problem occurs after restart. Use headphones for monitoring; do not raise volume to reproduce feedback.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual result
+      description: Include the visible error, if any, after removing personal paths or identifiers.
+    validations:
+      required: true
+  - type: textarea
+    id: isolation
+    attributes:
+      label: What changes the result?
+      description: Does it also occur with no effects, effects bypassed, monitoring off, or another supported route? For an AU, include its vendor/version and public component codes if known. Do not attach its state.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Reviewed diagnostics and screenshots
+      description: Optionally attach the MicLine diagnostic export. It excludes audio, device names/UIDs, plugin paths/state and raw logs. Attachments are not uploaded by the app. Do not paste credentials or unreviewed Console output.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy review
+      options:
+        - label: I reviewed this report and its attachments for private information and microphone content.
+          required: true
