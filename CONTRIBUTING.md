@@ -4,6 +4,13 @@ Read [AGENTS.md](AGENTS.md) for architecture, audio invariants and build command
 Keep changes focused on microphone processing. App routing, custom drivers and
 VST hosting are not incidental extensions of this project.
 
+## License
+
+MicLine is licensed under [Apache-2.0](LICENSE). By intentionally submitting a
+contribution for inclusion, you provide it under the same license, as described
+in section 5. Submit only work you have the right to contribute, and preserve
+third-party notices. See [NOTICE](NOTICE) for the project copyright and exceptions.
+
 For a bug, use the component-specific prompts in the issue form and follow
 [SUPPORT.md](SUPPORT.md). State exact app/macOS/driver/effect versions, steps and
 what changed the result. Do not upload recordings, secrets, presets or raw logs.

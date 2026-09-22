@@ -134,3 +134,10 @@ bounded capture buffers support diagnostics without writing PCM to disk.
 See [AGENTS.md](AGENTS.md) for engineering commands/invariants, [technical spec](specs/microphone-processing/TECH.md)
 for routing details, and [verification history](docs/RESULTS.md) for scoped results.
 Design provenance is recorded in `design/`; mockups are not runtime evidence.
+
+## License
+
+Copyright 2026 Sammykins. MicLine is licensed under [Apache-2.0](LICENSE).
+Contributions use the same license; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Third-party materials retain their own terms, listed in [NOTICE](NOTICE).
+Report vulnerabilities only through the private route in [SECURITY.md](SECURITY.md).

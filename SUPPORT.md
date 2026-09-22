@@ -5,8 +5,8 @@ do not reproduce feedback by increasing volume. BlackHole remains separately
 installed. MicLine never changes system defaults or reloads CoreAudio for you.
 
 Use the app's diagnostic report to review a local snapshot, export it if useful,
-and open the GitHub issue form. **Nothing is submitted automatically.** The private
-repository requires authorized GitHub access; export remains usable without it.
+and open the GitHub issue form. **Nothing is submitted automatically.** GitHub
+access is needed to submit an issue; local export remains usable without it.
 The browser form asks for reproduction steps, expected/actual behavior and the
 affected component. Attaching an export is optional and manual.
 
@@ -39,7 +39,8 @@ URL. Clicking the issue button contacts GitHub using your browser and its normal
 cookies/network identity. Exporting the report itself makes no network request.
 
 Do not attach raw crash/Console archives or AU state unless separately requested
-through an agreed private channel and reviewed. Reports about a security issue
-should go privately to the repository owner, not a broadly shared issue.
+through an agreed private channel and reviewed. Report security issues only through
+GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md),
+not through a public issue.
 
 Form syntax and URL field IDs follow [GitHub's issue-form schema](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema).

@@ -7,7 +7,8 @@ body:
       value: |
         Do not attach microphone recordings, presets/plugin state, certificates,
         keys, raw Console logs or personal paths. Review exported diagnostics and
-        crop screenshots before attaching. This repository requires authorized access.
+        crop screenshots before attaching. For vulnerabilities, follow SECURITY.md
+        and use GitHub private vulnerability reporting, not this issue form.
         MicLine does not submit this form for you.
   - type: dropdown
     id: component
