@@ -6,7 +6,7 @@ struct LevelMeterView: View {
     let reading: MeterReading
 
     private let ticks: [(Double, String)] = [
-        (-90, "−90"), (-60, "−60"), (-36, "−36"), (-18, "−18"), (-9, "−9"), (0, "0"),
+        (-90, "−90"), (-60, "−60"), (-36, "−36"), (-18, "−18"), (-9, "−9"), (0, "0 dBFS"),
     ]
 
     var body: some View {
@@ -36,7 +36,7 @@ struct LevelMeterView: View {
                         Color.red.opacity(0.42)
                     }
                     Rectangle()
-                        .fill(meterColor)
+                        .fill(Color.cyan)
                         .frame(width: proxy.size.width * position(reading.rmsDBFS), height: 12)
                         .padding(.vertical, 4)
                     marker(at: reading.samplePeakDBFS, width: 2, color: .white, proxy: proxy)
@@ -82,7 +82,7 @@ struct LevelMeterView: View {
     private func tickX(_ db: Double, width: Double) -> Double {
         let raw = width * position(db)
         if db == -90 { return 10 }
-        if db == 0 { return width - 7 }
+        if db == 0 { return width - 20 }
         return raw
     }
 
