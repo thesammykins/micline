@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "RFC 8032 vector 1 public key in the Sparkle fixture"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^scripts/verify-sparkle-fixture\.sh$''']
+regexTarget = "match"
+regexes = ['''PUBLIC_TEST_KEY='11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHUR[o]='''']
