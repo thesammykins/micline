@@ -23,6 +23,9 @@ affected component. Attaching an export is optional and manual.
   whole seconds and optional numeric error codes. No free-text error descriptions,
   Console collection or audio-callback logging. Clearing logs or quitting removes them.
 
+Device capabilities and public AU codes can still identify a distinctive hardware
+or plugin setup. The report is not anonymous; review it before sharing.
+
 The report uses an **allowlist**, not a best-effort regex over raw logs. Raw
 `AudioDevice`, `PluginRecord` and `SessionSettings` are never serialized into it.
 Untrusted version strings are accepted only in bounded numeric form. Microphone
