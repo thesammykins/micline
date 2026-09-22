@@ -22,6 +22,48 @@ Initial repository: empty, unborn local `master`, no source or project guidance.
 
 Explicit monitoring extends the aggregate to [mic, virtual output, physical stereo output] at equal nominal rates. The third device also receives drift correction; ordered membership and flattened output count are verified. A stereo client mix fans out through the Output-scope/element-0 channel map [0,1,0,1], derived from verified member offsets. Input map stays [0]. Monitoring is runtime-only; normal start never restores it. It follows main gain, without writing hardware volume. Enabling or disabling rebuilds/stops the route rather than changing an unverified live topology.
 
+### Meter calculation and display contract
+
+`MeterReading` separates AES17-calibrated RMS, displayed sample peak, held sample
+peak, and a clip latch. For finite normalized Float32 samples, sample peak is the
+maximum absolute sample across every channel since the previous UI consume;
+sample-peak dBFS is `20 × log10(peak)`, floored at −90 dBFS. C11 atomic maximum
+accumulation and exchange preserve a brief callback peak until the 10 Hz reader
+consumes it. This is not interpolated true peak and must never be labeled dBTP.
+
+Each callback calculates RMS independently per channel over finite samples, then
+uses the largest channel RMS. A silent channel must not dilute a hot channel.
+RMS dBFS is `20 × log10(rms × √2)`, so a full-scale sine is 0 dBFS and a full-scale
+square is approximately +3.0103 dBFS RMS. Peak, not calibrated RMS, drives clipping
+and headroom colors. Nonfinite-only data and silence produce the −90 dBFS floor.
+
+Display attack is immediate at the next consume. Main-actor ballistics use actual
+elapsed seconds, release at 11.76 dB/s, and hold the maximum sample peak for one
+second before release. Any finite sample magnitude ≥1 latches clipping for one
+second; values immediately below 1 do not clip. Reset clears accumulation,
+ballistics and clip state. Green below −18, orange from −18 to below −9, and red
+from −9 dBFS are MicLine headroom cues using EBU landmarks, not EBU compliance.
+Neither the polling period nor these display ballistics measure audio latency.
+
+Deterministic tests cover asymmetric channel aggregation, planar/interleaved
+buffers, a transient followed by quiet samples before consume, exact band/clip
+boundaries, sine/square calibration, hold/release, nonfinite data and reset.
+
+Sources: [ITU-R BS.1770-5](https://www.itu.int/rec/R-REC-BS.1770-5-202311-I/en)
+for the sample/true-peak distinction; [AES metering guidance](https://aes.org/resources/audio-topics/loudness-project/learn-more/)
+for RMS and peak terminology; [IEC return characteristic documentation](https://www.mathworks.com/help/audio/ref/audiolevelmeter-system-object.html)
+for 20 dB in 1.7 seconds; and [EBU technical review](https://tech.ebu.ch/docs/techreview/trev_297-spikofski_klar.pdf)
+for the alignment/permitted-maximum landmarks.
+
+### Diagnostic privacy boundary
+
+`DiagnosticLog` accepts only fixed event cases and optional numeric error codes
+on the main actor, retaining 64 events in memory. `AudioGraph.diagnosticReport()`
+projects selected endpoint capabilities and public AU component codes, never
+serializing raw device/plugin/session objects. No logging occurs in audio taps.
+The browser prefill is bounded metadata only; exported JSON is separately reviewed
+and attached manually. Exact collected and excluded fields are in [SUPPORT.md](../../SUPPORT.md).
+
 `RouteProbe` captures bounded in-memory raw and consumer waveforms with audio host/sample timestamps; `Capture.c` never writes PCM to disk. Signed ±250 ms correlation DC-centers samples, ranks both polarities by magnitude and rejects competing peaks, clipping, discontinuities and insufficient matches. The metric is experimental timestamp-aligned waveform lag, **not callback delivery latency**. The initial verified unmuted 48 kHz/512-frame run matched 20/20 trials both bypassed and with Elgato Compressor active, with zero timestamp-aligned lag. A zero lag can occur because driver timestamps preserve sample position. Earlier muted and uncentered/ambiguous runs are not valid delivery-latency evidence. A separate digital-marker control mutes MicLine output, writes a marker only to the virtual device, and reports consumer correlation and strongest signed raw correlation against a 0.7 magnitude threshold. It does not prove zero leakage. Future delivery measurement must record callback-entry monotonic times per buffer; true call-app latency additionally requires consumer instrumentation or a physical loopback.
 
 ## Authoritative references
