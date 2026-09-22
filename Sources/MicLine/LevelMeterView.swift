@@ -8,6 +8,7 @@ struct LevelMeterView: View {
     private let ticks: [(Double, String)] = [
         (-90, "−90"), (-60, "−60"), (-36, "−36"), (-18, "−18"), (-9, "−9"), (0, "0 dBFS"),
     ]
+    private let helpText = "RMS shows average level calibrated to a full-scale sine wave. Peak measures samples, not true peak; hold keeps brief peaks visible. dBFS means decibels full scale. CLIP means a sample reached or exceeded 0 dBFS."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -60,8 +61,8 @@ struct LevelMeterView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
         .accessibilityValue(accessibilityValue)
-        .accessibilityHint("RMS shows average signal energy. Sample peak shows the current highest sample, hold keeps a brief peak visible, and clip means a sample reached or exceeded 0 decibels full scale.")
-        .help("RMS is average signal energy. Sample peak is the current highest sample; hold keeps a brief peak visible. dBFS measures level below digital maximum, and CLIP means a sample reached or exceeded 0 dBFS.")
+        .accessibilityHint(helpText)
+        .help(helpText)
     }
 
     private var meterColor: Color {

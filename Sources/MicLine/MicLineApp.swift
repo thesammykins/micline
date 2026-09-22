@@ -130,9 +130,8 @@ struct MenuView: View {
                 Task { await graph.start() }
             }
         }
-        .help(graph.selectedOutput?.isVirtual == false ? "Open MicLine to review the physical-output feedback warning before starting." : "Start processing")
-        .accessibilityHint(graph.selectedOutput?.isVirtual == false
-            ? "Opens the main window for feedback confirmation." : "Starts the saved microphone processing route.")
+        .help(processingHelp)
+        .accessibilityHint(processingHelp)
         .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
         .keyboardShortcut("s", modifiers: [.command, .shift])
         Divider()
@@ -152,6 +151,13 @@ struct MenuView: View {
         .keyboardShortcut("q")
         Text("Monitor \(graph.monitoring ? "on" : "off") · \(activeEffectCount) effect\(activeEffectCount == 1 ? "" : "s") active")
             .foregroundStyle(.secondary)
+    }
+
+    private var processingHelp: String {
+        if graph.running || graph.loading { return "Stop processing and save effect state." }
+        return graph.selectedOutput?.isVirtual == false
+            ? "Open MicLine to review the physical-output feedback warning before starting."
+            : "Start the saved microphone processing route."
     }
 
     private var routeSummary: String {
