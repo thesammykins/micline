@@ -115,16 +115,25 @@ GitHub Actions supports [repository secrets, environment secrets, and organizati
 secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions).
 It does not have personal-account-global Actions secrets; account-specific secrets
 are a separate [Codespaces feature](https://docs.github.com/en/codespaces/managing-your-codespaces/managing-your-account-specific-secrets-for-github-codespaces).
-For this private repository under a personal account, use repository secrets or a
-protected `release-signing` environment. Organization secrets become available
-only if the repository is owned by an organization.
+For this repository under a personal account, release credentials must use the
+`release-signing` environment rather than repository secrets. Organization
+secrets become available only if the repository is owned by an organization.
 
-The preferred configuration is a protected `release-signing` environment with
-required reviewers, self-review prevention, and a `main` deployment-branch rule.
-The workflow also checks the `main` ref before credential use. Private-repository
-environment protection depends on the repository plan; if those controls are not
-available, leave signed builds disabled until the user explicitly accepts broader
-repository-secret scope. No release credentials are currently configured.
+The `release-signing` environment is configured with a custom deployment-branch
+policy that admits only the exact `main` branch. The workflow independently checks
+the `main` ref before credential use. Required reviewers, self-review prevention,
+and wait timers are not available for a private personal repository on GitHub
+Free or Pro; GitHub makes those rules available on public repositories. Repository
+visibility must not be changed to obtain them without separate authorization.
+If the repository later becomes public, add an independent required reviewer and
+prevent self-review before enabling signed builds. The repository currently has
+only one collaborator, so that two-person gate cannot be configured usefully yet.
+Do not fall back to broader repository secrets. No environment secrets or
+variables are currently configured.
+
+Repository privacy is not a release security boundary. Pull-request jobs must
+remain credential-free, and signed jobs must remain manual, `main`-only,
+environment-scoped, fail-closed, and artifact-only if the source becomes public.
 
 Add these environment secrets using secure credential tooling, never plaintext
 chat or source:
