@@ -12,4 +12,10 @@
 <key>LSMinimumSystemVersion</key><string>27.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>MicLine processes your selected microphone locally and sends it to your chosen audio output.</string>
+<key>SUEnableAutomaticChecks</key><false/>
+<key>SUAutomaticallyUpdate</key><false/>
+<key>SUEnableSystemProfiling</key><false/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SURequireSignedFeed</key><true/>
+<key>SUSignedFeedFailureExpirationInterval</key><integer>0</integer>
 </dict></plist>

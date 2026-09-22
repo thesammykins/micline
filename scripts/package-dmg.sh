@@ -69,7 +69,7 @@ done
 [[ -d "$APP" ]] || die "app bundle not found: $APP"
 [[ "$VOLUME_NAME" =~ ^[A-Za-z0-9._\ -]+$ ]] || die "volume name contains unsupported characters"
 
-for command_name in codesign hdiutil open osascript swift xcrun; do
+for command_name in codesign diskutil hdiutil open osascript swift xcrun; do
     command -v "$command_name" >/dev/null 2>&1 || die "required command not found: $command_name"
 done
 codesign --verify --deep --strict --verbose=2 "$APP"
@@ -77,11 +77,13 @@ swiftc -parse "$ROOT/scripts/generate-dmg-background.swift"
 
 if ((SIGN_DMG)); then
     [[ -n "${MICLINE_SIGNING_IDENTITY:-}" ]] || die "MICLINE_SIGNING_IDENTITY is required with --sign-dmg"
+    [[ "$MICLINE_SIGNING_IDENTITY" == "Developer ID Application:"* ]] || die "--sign-dmg requires a Developer ID Application identity"
 fi
 if ((NOTARIZE)); then
+    ((SIGN_DMG)) || die "--notarize requires --sign-dmg"
     [[ -n "${APPLE_NOTARY_KEY_ID:-}" ]] || die "APPLE_NOTARY_KEY_ID is required with --notarize"
     [[ -n "${APPLE_NOTARY_ISSUER_ID:-}" ]] || die "APPLE_NOTARY_ISSUER_ID is required with --notarize"
-    [[ -f "${APPLE_NOTARY_KEY_PATH:-}" ]] || die "APPLE_NOTARY_KEY_PATH must name a readable API key with --notarize"
+    [[ -r "${APPLE_NOTARY_KEY_PATH:-}" ]] || die "APPLE_NOTARY_KEY_PATH must name a readable API key with --notarize"
 fi
 if ((VALIDATE_ONLY)); then
     printf 'validated app and DMG packaging prerequisites\n'
@@ -96,7 +98,7 @@ ATTACHED=0
 
 cleanup() {
     if ((ATTACHED)); then
-        hdiutil detach "$MOUNT_POINT" -force >/dev/null 2>&1 || true
+        diskutil eject "$MOUNT_POINT" >/dev/null 2>&1 || true
     fi
     rm -rf "$WORK_DIR"
 }
@@ -116,14 +118,11 @@ hdiutil create \
     -volname "$VOLUME_NAME" \
     "$READ_WRITE_DMG"
 
-hdiutil attach \
-    -quiet \
-    -noautoopen \
-    "$READ_WRITE_DMG"
+diskutil image attach \
+    --mountPoint "$MOUNT_POINT" \
+    "$READ_WRITE_DMG" >/dev/null
 ATTACHED=1
 
-# macOS 27 does not register a -noautoopen image with Finder until its mount
-# path is opened. Register it explicitly before addressing the disk by label.
 open "$MOUNT_POINT"
 sleep 2
 
@@ -144,6 +143,7 @@ on run argv
                 set arrangement to not arranged
                 set icon size to 112
                 set text size to 13
+                set label position to bottom
                 set background picture to backgroundFile
             end tell
             set position of item "MicLine.app" to {170, 220}
@@ -157,7 +157,7 @@ end run
 APPLESCRIPT
 
 sync
-hdiutil detach "$MOUNT_POINT" -quiet
+diskutil eject "$MOUNT_POINT" >/dev/null
 ATTACHED=0
 
 rm -f "$OUTPUT"

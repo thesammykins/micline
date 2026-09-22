@@ -8,6 +8,7 @@ on:
       - "Sources/**"
       - "Tests/**"
       - "Package.swift"
+      - "Package.resolved"
       - "Resources/**"
       - "README.md"
       - "AGENTS.md"
@@ -19,6 +20,7 @@ on:
       - "Sources/**"
       - "Tests/**"
       - "Package.swift"
+      - "Package.resolved"
       - "Resources/**"
       - "README.md"
       - "AGENTS.md"
@@ -86,6 +88,19 @@ jobs:
       - name: Build and test without signing credentials
         run: |
           sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
-          swift build -c release --sdk "$sdk_path"
+          swift build --product MicLine -c release --sdk "$sdk_path" --arch arm64
           swift test --sdk "$sdk_path"
           swiftc -typecheck scripts/generate-dmg-background.swift
+          otool -l .build/out/Products/Release/MicLine | grep -F '@executable_path/../Frameworks'
+
+      - name: Verify x86_64 cross-build feasibility only
+        run: |
+          sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+          swift build \
+            --product MicLine \
+            -c release \
+            --sdk "$sdk_path" \
+            --arch x86_64 \
+            --scratch-path .build/ci-x86_64
+          lipo -archs .build/ci-x86_64/out/Products/Release/MicLine | grep -qw x86_64
+          echo "x86_64 cross-build passed; macOS 27 has no supported Intel Mac runtime target"

@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   signed-artifact:
-    if: ${{ github.ref == 'refs/heads/main' && vars.MICLINE_ENABLE_SIGNED_RELEASE == 'true' && inputs.confirmation == 'SIGN_ARTIFACT_ONLY' }}
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'SIGN_ARTIFACT_ONLY' }}
     runs-on: xcode-27
     timeout-minutes: 45
     environment: release-signing
@@ -42,11 +42,18 @@ jobs:
 
       - name: Validate requested version values
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
-          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+          MICLINE_VERSION: ${{ inputs.version }}
+          MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
+          MICLINE_ENABLE_SIGNED_RELEASE: ${{ vars.MICLINE_ENABLE_SIGNED_RELEASE }}
+          MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
+          MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: |
-          [[ "$RELEASE_VERSION" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]
-          [[ "$RELEASE_BUILD_NUMBER" =~ ^[0-9]+$ ]]
+          : "${MICLINE_ENABLE_SIGNED_RELEASE:?MICLINE_ENABLE_SIGNED_RELEASE repository variable is required}"
+          [[ "$MICLINE_ENABLE_SIGNED_RELEASE" == "true" ]] || {
+            echo "MICLINE_ENABLE_SIGNED_RELEASE must equal true" >&2
+            exit 1
+          }
+          ./scripts/build.sh --check-release-configuration
 
       - name: Import Developer ID certificate into an ephemeral keychain
         env:
@@ -87,6 +94,8 @@ jobs:
           MICLINE_VERSION: ${{ inputs.version }}
           MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
           MICLINE_REQUIRE_APP_ICON: "1"
+          MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
+          MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build.sh
 
       - name: Decode App Store Connect API key
