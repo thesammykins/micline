@@ -81,9 +81,10 @@ if ((SIGN_DMG)); then
 fi
 if ((NOTARIZE)); then
     ((SIGN_DMG)) || die "--notarize requires --sign-dmg"
-    [[ -n "${APPLE_NOTARY_KEY_ID:-}" ]] || die "APPLE_NOTARY_KEY_ID is required with --notarize"
-    [[ -n "${APPLE_NOTARY_ISSUER_ID:-}" ]] || die "APPLE_NOTARY_ISSUER_ID is required with --notarize"
-    [[ -r "${APPLE_NOTARY_KEY_PATH:-}" ]] || die "APPLE_NOTARY_KEY_PATH must name a readable API key with --notarize"
+    [[ -n "${APPLE_NOTARY_KEYCHAIN_PROFILE:-}" ]] || \
+        die "APPLE_NOTARY_KEYCHAIN_PROFILE is required with --notarize"
+    [[ -z "${APPLE_NOTARY_KEY_ID:-}" && -z "${APPLE_NOTARY_ISSUER_ID:-}" && -z "${APPLE_NOTARY_KEY_PATH:-}" ]] || \
+        die "file-based notary credentials are unsupported; use an existing Keychain profile"
 fi
 if ((VALIDATE_ONLY)); then
     printf 'validated app and DMG packaging prerequisites\n'
@@ -176,9 +177,7 @@ fi
 
 if ((NOTARIZE)); then
     xcrun notarytool submit "$OUTPUT" \
-        --key "$APPLE_NOTARY_KEY_PATH" \
-        --key-id "$APPLE_NOTARY_KEY_ID" \
-        --issuer "$APPLE_NOTARY_ISSUER_ID" \
+        --keychain-profile "$APPLE_NOTARY_KEYCHAIN_PROFILE" \
         --wait
     xcrun stapler staple "$OUTPUT"
     xcrun stapler validate "$OUTPUT"

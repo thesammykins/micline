@@ -46,6 +46,7 @@ jobs:
           MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
           MICLINE_ENABLE_SIGNED_RELEASE: ${{ vars.MICLINE_ENABLE_SIGNED_RELEASE }}
           MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES: ${{ vars.MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES }}
+          MICLINE_NOTARIZE_REQUESTED: ${{ inputs.notarize }}
           MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: |
@@ -57,7 +58,11 @@ jobs:
           ./scripts/build.sh --check-release-configuration
           : "${MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES:?credential-file handling is not approved}"
           [[ "$MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES" == "true" ]] || {
-            echo "Signed CI remains blocked: security import and notarytool require temporary credential files" >&2
+            echo "Signed CI remains blocked: security import requires a temporary PKCS#12 file" >&2
+            exit 1
+          }
+          [[ "$MICLINE_NOTARIZE_REQUESTED" != "true" ]] || {
+            echo "Hosted notarization remains blocked: the runner has no approved fileless notary credential provisioning" >&2
             exit 1
           }
 
@@ -101,21 +106,7 @@ jobs:
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build.sh
 
-      - name: Decode App Store Connect API key
-        if: ${{ inputs.notarize }}
-        env:
-          NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-        run: |
-          : "${NOTARY_KEY_P8_BASE64:?APPLE_NOTARY_KEY_P8_BASE64 is required when notarize is enabled}"
-          : "${NOTARY_KEY_ID:?APPLE_NOTARY_KEY_ID is required when notarize is enabled}"
-          : "${NOTARY_ISSUER_ID:?APPLE_NOTARY_ISSUER_ID is required when notarize is enabled}"
-          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
-          chmod 600 "$RUNNER_TEMP/AuthKey.p8"
-
       - name: Package signed artifact
-        if: ${{ !inputs.notarize }}
         env:
           MICLINE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
           RELEASE_VERSION: ${{ inputs.version }}
@@ -125,22 +116,6 @@ jobs:
             --output "build/MicLine-$RELEASE_VERSION.dmg" \
             --volume-name "MicLine $RELEASE_VERSION" \
             --sign-dmg
-
-      - name: Package and notarize signed artifact
-        if: ${{ inputs.notarize }}
-        env:
-          MICLINE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          ./scripts/package-dmg.sh \
-            --app build/MicLine.app \
-            --output "build/MicLine-$RELEASE_VERSION.dmg" \
-            --volume-name "MicLine $RELEASE_VERSION" \
-            --sign-dmg \
-            --notarize
 
       - name: Create artifact checksum
         env:
@@ -152,6 +127,4 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/micline-signing.keychain-db"
           security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-          rm -f \
-            "$RUNNER_TEMP/micline-signing.p12" \
-            "$RUNNER_TEMP/AuthKey.p8"
+          rm -f "$RUNNER_TEMP/micline-signing.p12"

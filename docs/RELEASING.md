@@ -102,15 +102,21 @@ neutral rail behind both genuine Finder labels; it must not replace them with
 baked text or per-item label pills. Verify selected and unselected native labels
 in the mounted image before release.
 
-For notarization, place an App Store Connect API key in a temporary file and add
-`--notarize` with these environment variables:
+For local notarization, the package script accepts only an existing `notarytool`
+Keychain profile. Creating or modifying that profile is a separate credential
+operation and is not part of release packaging. Once an authorized profile
+already exists, add `--notarize` and set its name without exposing credential
+values:
 
-- `APPLE_NOTARY_KEY_ID`
-- `APPLE_NOTARY_ISSUER_ID`
-- `APPLE_NOTARY_KEY_PATH`
+```sh
+APPLE_NOTARY_KEYCHAIN_PROFILE='EXISTING_PROFILE_NAME' \
+./scripts/package-dmg.sh ... --sign-dmg --notarize
+```
 
-The package script submits with `notarytool --wait`, staples the accepted ticket,
-and validates the staple. Delete the temporary key file after use.
+The script passes `--keychain-profile` to `notarytool --wait`, staples the
+accepted ticket, and validates the staple. It rejects file-based notary
+credentials. A profile's presence is not proof that Apple will accept a future
+submission; validate it only during an explicitly authorized notarization.
 
 ## GitHub Actions configuration
 
@@ -146,9 +152,6 @@ chat or source:
 | `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID certificate and private key in PKCS#12 format |
 | `MACOS_CERTIFICATE_PASSWORD` | PKCS#12 export password |
 | `APPLE_DEVELOPER_ID_APPLICATION` | Exact `Developer ID Application: … (TEAMID)` identity |
-| `APPLE_NOTARY_KEY_ID` | App Store Connect API key ID |
-| `APPLE_NOTARY_ISSUER_ID` | App Store Connect issuer ID |
-| `APPLE_NOTARY_KEY_P8_BASE64` | Base64-encoded App Store Connect private key |
 
 Add public environment variables `MICLINE_SPARKLE_FEED_URL` and
 `MICLINE_SPARKLE_PUBLIC_ED_KEY`. Set repository variable
@@ -156,38 +159,44 @@ Add public environment variables `MICLINE_SPARKLE_FEED_URL` and
 public update metadata, and distribution origin have been reviewed. Leaving it
 unset makes the manually dispatched job fail explicitly before loading signing
 credentials. The workflow validates the host, SDK, version, architecture, and
-public Sparkle metadata before the certificate or notary credentials are loaded.
+public Sparkle metadata before the certificate is loaded.
 
-The prepared hosted workflow currently must decode the PKCS#12 certificate and,
-when notarization is requested, the App Store Connect key into temporary files
-because `security import` and `notarytool --key` consume paths. Current authority
-prohibits certificate, password, and private-key files, including temporary ones.
-Therefore repository variable `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES` must
-remain unset: the job fails before loading secrets. Set it only after Sammy
-separately approves this exact ephemeral-file mechanism, or replace the mechanism
-with a verified supported approach that does not create those files. Choosing a
-secret scope or enabling `MICLINE_ENABLE_SIGNED_RELEASE` is not that approval.
-The random ephemeral-keychain password remains only in the step process memory.
+The prepared hosted workflow currently must decode the PKCS#12 certificate into
+a temporary file because `security import` consumes a path. Current authority
+prohibits certificate and private-key files, including temporary ones. Therefore
+repository variable `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES` must remain unset:
+the job fails before loading secrets. Set it only after Sammy separately approves
+this exact ephemeral-file mechanism, or replace the mechanism with a verified
+supported approach that does not create the file. Choosing a secret scope or
+enabling `MICLINE_ENABLE_SIGNED_RELEASE` is not that approval. The random
+ephemeral-keychain password remains only in the step process memory.
+
+Hosted notarization is also disabled. A fresh GitHub-hosted runner has no
+pre-provisioned `notarytool` Keychain profile, and no approved fileless mechanism
+has been established for provisioning one. Selecting the `notarize` input fails
+before credential loading. Do not replace that stop with an App Store Connect key
+file unless the file mechanism receives separate approval.
 
 To build an artifact, manually dispatch **Build signed release artifact**, enter
-the version and integer build number, and type `SIGN_ARTIFACT_ONLY`. Notarization
-is independently opt-in; enabling it requires all three notary secrets. The job:
+the version and integer build number, leave notarization disabled, and type
+`SIGN_ARTIFACT_ONLY`. The job:
 
 1. verifies macOS and SDK 27 before loading credentials;
 2. imports the certificate into an ephemeral keychain;
 3. builds the hardened, timestamped app and branded DMG;
-4. optionally notarizes and staples the DMG;
-5. computes the DMG SHA-256 without uploading or retaining either file; and
-6. removes the API key file, certificate file, and ephemeral keychain in an
-   unconditional cleanup step.
+4. computes the DMG SHA-256 without uploading or retaining either file; and
+5. removes the certificate file and ephemeral keychain in an unconditional
+   cleanup step.
 
 The workflow has only `contents: read` permission. Creating tags, GitHub Releases,
 or public downloads remains a separate human-authorized action.
 
 The signed workflow is intentionally untested until the required secrets and
-protected environment exist. A local Developer ID identity being present does not
-prove CI import, timestamping, or notarization. Notarization remains independently
-opt-in and fails closed when any required credential is absent.
+protected environment exist and ephemeral certificate-file handling is approved.
+A local Developer ID identity being present does not prove CI import or
+timestamping. Hosted notarization remains disabled; local notarization requires
+an existing authorized `notarytool` Keychain profile and explicit submission
+authorization.
 
 ## Sparkle update boundary
 
@@ -198,6 +207,16 @@ profiling default off. The user must explicitly opt in or request a manual check
 Sparkle requires a signed feed and verifies the update signature before extraction.
 The complete upstream Sparkle license and bundled-code notices are copied into
 the app as `Contents/Resources/Sparkle-LICENSE.txt`.
+
+`scripts/verify-sparkle-fixture.sh` uses Sparkle's pinned `generate_appcast` and
+`sign_update` binaries with [RFC 8032 test vector 1](https://www.rfc-editor.org/rfc/rfc8032#section-7.1),
+which is public test data with no production security value. The disposable
+fixture proves that Sparkle accepts its signed appcast and archive and rejects
+an unsigned feed, tampered feed, tampered archive, and wrong signing key. Every
+tool call receives the fixture seed over stdin, so the test never accesses a
+Keychain item or creates a key file. This validates the release format and
+negative controls, not a live updater download: an end-to-end `SPUUpdater` check
+still requires a separately authorized HTTPS staging feed and prior-version app.
 
 The app embeds `Sparkle.framework` under `Contents/Frameworks` and signs Sparkle's
 nested XPC services, helper, updater app, and framework inside-out with the same
@@ -323,11 +342,13 @@ for the 2.10 tool behavior used here.
 
 ## Release threat model
 
-- **Credential theft:** certificate, PKCS#12 password, App Store Connect key, and
+- **Credential theft:** certificate, PKCS#12 password, Notary Keychain profile,
+  App Store Connect key, and
   Sparkle private key can authorize malicious releases. Keep them out of PR jobs,
   logs, source, artifacts, and prompts. The hosted signing path is additionally
-  blocked because its tools require temporary P12/P8 files; cleanup is not a
-  substitute for approval to create them.
+  blocked because `security import` requires a temporary P12 file; cleanup is
+  not a substitute for approval to create it. Hosted notarization remains blocked
+  because no approved fileless profile-provisioning path exists.
 - **Untrusted workflow changes:** pull requests receive no signing secrets. The
   credentialed workflow is manual, main-only, explicitly enabled, confirmation
   gated, and artifact-only. Review workflow changes before enabling it.
