@@ -3,15 +3,37 @@ import SwiftUI
 import MicLineCore
 import MicLineUI
 
+struct EffectChainView: View {
+    @ObservedObject var graph: AudioGraph
+    @State private var dragSessionID = UUID()
+    @State private var draggingID: UUID?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(graph.settings.effects.enumerated()), id: \.element.id) { index, effect in
+                EffectRow(graph: graph, index: index, effect: effect,
+                    dragSessionID: dragSessionID, draggingID: $draggingID)
+                if index < graph.settings.effects.count - 1 { Divider() }
+            }
+        }
+    }
+}
+
 struct EffectRow: View {
     @ObservedObject var graph: AudioGraph
     let index: Int
     let effect: EffectSelection
+    let dragSessionID: UUID
+    @Binding var draggingID: UUID?
+    @State private var dropEdge: EffectDropEdge?
+    @State private var rowHeight: CGFloat = 1
 
     private var name: String { graph.plugins.first { $0.id == effect.pluginID }?.name ?? "Missing effect" }
+    private var payload: EffectDragPayload { EffectDragPayload(effectID: effect.id, sessionID: dragSessionID) }
 
     var body: some View {
         HStack(spacing: 12) {
+            reorderGrip
             Text(String(format: "%02d", index + 1)).monospacedDigit().foregroundStyle(.secondary).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).lineLimit(1).foregroundStyle(effect.bypassed || graph.bypass ? .secondary : .primary)
@@ -25,24 +47,145 @@ struct EffectRow: View {
                 }
             }))
             .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            Button { graph.move(effect.id, by: -1) } label: { Image(systemName: "arrow.up") }
-                .disabled(index == 0).help("Move \(name) up")
-                .accessibilityLabel("Move \(name) up")
-            Button { graph.move(effect.id, by: 1) } label: { Image(systemName: "arrow.down") }
-                .disabled(index == graph.settings.effects.count - 1).help("Move \(name) down")
-                .accessibilityLabel("Move \(name) down")
-            Button("Controls") { graph.openEditor(effect.id) }.disabled(graph.loading)
-            Button(role: .destructive) { graph.remove(effect.id) } label: { Image(systemName: "minus") }
-                .help("Remove \(name)")
+            .help("Include or bypass \(name) without removing it from the chain.")
+            .accessibilityHint("Turns this effect on or bypasses it.")
+            Button("Controls") { graph.openEditor(effect.id) }
+                .disabled(graph.loading)
+                .help("Open the controls supplied by \(name).")
+            Button(role: .destructive) { graph.remove(effect.id) } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+                .buttonStyle(.borderless)
+                .help("Remove \(name) from the effects chain. Processing stops before the chain changes.")
                 .accessibilityLabel("Remove \(name)")
+                .accessibilityHint("Stops processing and removes this effect from the chain.")
         }
         .buttonStyle(.bordered)
         .padding(.vertical, 10)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { rowHeight = geometry.size.height }
+                    .onChange(of: geometry.size.height) { _, height in rowHeight = height }
+            }
+        }
+        .overlay(alignment: dropEdge == .after ? .bottom : .top) {
+            if dropEdge != nil {
+                Capsule().fill(Color.accentColor).frame(height: 3).padding(.horizontal, 2)
+                    .accessibilityHidden(true)
+            }
+        }
+        .dropDestination(for: EffectDragPayload.self) { items, session in
+            guard let item = items.first, items.count == 1 else { return }
+            performDrop(item, edge: edge(for: session.location.y))
+        }
+        .onDropSessionUpdated { session in
+            switch session.phase {
+            case .entering, .active:
+                guard draggingID != nil, draggingID != effect.id else { dropEdge = nil; return }
+                dropEdge = edge(for: session.location.y)
+            case .exiting, .ended, .dataTransferCompleted:
+                dropEdge = nil
+            @unknown default:
+                dropEdge = nil
+            }
+        }
+        .dropConfiguration { _ in
+            DropConfiguration(operation: draggingID == nil ? .forbidden : .move)
+        }
+    }
+
+    private var reorderGrip: some View {
+        EffectReorderGrip(name: name, position: index + 1,
+            canMoveEarlier: index > 0,
+            canMoveLater: index < graph.settings.effects.count - 1,
+            dragging: draggingID == effect.id,
+            moveEarlier: { graph.move(effect.id, by: -1) },
+            moveLater: { graph.move(effect.id, by: 1) })
+            .draggable(payload) {
+                Label(name, systemImage: "slider.horizontal.3")
+                    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .onDragSessionUpdated { session in
+                switch session.phase {
+                case .initial, .active: draggingID = effect.id
+                case .ended, .dataTransferCompleted: draggingID = nil
+                @unknown default: draggingID = nil
+                }
+            }
+    }
+
+    private func edge(for y: CGFloat) -> EffectDropEdge {
+        y < rowHeight / 2 ? .before : .after
+    }
+
+    private func performDrop(_ item: EffectDragPayload, edge: EffectDropEdge) {
+        let ids = graph.settings.effects.map(\.id)
+        if let offset = EffectReordering.offset(ids: ids, payload: item, sessionID: dragSessionID,
+                                                destinationID: effect.id, edge: edge) {
+            graph.move(item.effectID, by: offset)
+        }
+        dropEdge = nil
+        draggingID = nil
     }
 
     private var statusText: String {
         if graph.bypass { return "Audio Unit · Bypassed by chain" }
         return effect.bypassed ? "Audio Unit · Bypassed" : "Audio Unit · Enabled"
+    }
+}
+
+private struct EffectReorderGrip: View {
+    let name: String
+    let position: Int
+    let canMoveEarlier: Bool
+    let canMoveLater: Bool
+    let dragging: Bool
+    let moveEarlier: () -> Void
+    let moveLater: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 3) {
+                    Circle().frame(width: 3, height: 3)
+                    Circle().frame(width: 3, height: 3)
+                }
+            }
+        }
+        .foregroundStyle(dragging ? Color.accentColor : .secondary)
+        .frame(width: 28, height: 32)
+        .background((dragging ? Color.accentColor : Color.secondary).opacity(dragging ? 0.18 : hovered ? 0.10 : 0),
+                    in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .focusable(true, interactions: .edit)
+        .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+            guard press.modifiers.contains(.option) else { return .ignored }
+            if press.key == .upArrow, canMoveEarlier { moveEarlier(); return .handled }
+            if press.key == .downArrow, canMoveLater { moveLater(); return .handled }
+            return .ignored
+        }
+        .help("Drag to reorder \(name). When focused, press Option–Up or Option–Down.")
+        .accessibilityElement()
+        .accessibilityLabel("Reorder \(name)")
+        .accessibilityValue("Position \(position)")
+        .accessibilityHint("Drag to a new position, or use the Move Earlier and Move Later actions.")
+        .accessibilityAction(named: "Move \(name) earlier") {
+            if canMoveEarlier { moveEarlier() }
+        }
+        .accessibilityAction(named: "Move \(name) later") {
+            if canMoveLater { moveLater() }
+        }
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: if canMoveLater { moveLater() }
+            case .decrement: if canMoveEarlier { moveEarlier() }
+            @unknown default: break
+            }
+        }
     }
 }
 
@@ -64,11 +207,14 @@ struct EffectLibraryView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close the Audio Unit library without adding another effect.")
             }
             TextField("Search Audio Units", text: $search)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("effect-search")
+                .help("Filter the registered Audio Unit effects by name.")
             if graph.plugins.isEmpty {
                 ContentUnavailableView("No Audio Units found", systemImage: "puzzlepiece.extension",
                     description: Text("Rescan after installing an Audio Unit effect."))
@@ -90,6 +236,8 @@ struct EffectLibraryView: View {
                         }
                         .disabled(graph.loading || graph.settings.effects.count >= 16)
                         .accessibilityLabel("Add \(plugin.name)")
+                        .accessibilityHint("Stops processing and adds this effect at the end of the chain.")
+                        .help("Add \(plugin.name) at the end of the effects chain.")
                     }
                     .padding(.vertical, 4)
                 }
@@ -99,6 +247,7 @@ struct EffectLibraryView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Rescan") { graph.refresh() }
+                    .help("Scan the system again for registered Audio Unit effects.")
             }
         }
         .padding(24).frame(width: 520, height: 480)
@@ -121,7 +270,9 @@ struct GenericAUControlsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") { graph.genericEditorID = nil }.keyboardShortcut(.defaultAction)
+                Button("Done") { graph.genericEditorID = nil }
+                    .keyboardShortcut(.defaultAction)
+                    .help("Close these generic Audio Unit controls.")
             }
             Divider()
             if parameters.isEmpty {
@@ -157,6 +308,7 @@ struct GenericAUControlsView: View {
                     }
                     .buttonStyle(.link)
                     .disabled(openingValues[parameter.address] == nil)
+                    .help("Restore \(parameter.displayName) to the value it had when these controls opened.")
                 }
             }
             if !finiteRange {
@@ -171,6 +323,7 @@ struct GenericAUControlsView: View {
                     }
                 }
                 .labelsHidden().disabled(!writable)
+                .help("Choose the \(parameter.displayName) value supplied by the Audio Unit.")
                 Text("Choices and labels are supplied by the Audio Unit.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
@@ -178,6 +331,7 @@ struct GenericAUControlsView: View {
                     Text(format(parameter.minValue, parameter: parameter)).font(.caption).foregroundStyle(.secondary)
                     Slider(value: displayBinding(parameter), in: 0...1)
                         .disabled(!writable)
+                        .help("Adjust \(parameter.displayName) within the range supplied by the Audio Unit.")
                     Text(format(parameter.maxValue, parameter: parameter)).font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {

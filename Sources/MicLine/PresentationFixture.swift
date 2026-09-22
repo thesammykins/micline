@@ -12,6 +12,7 @@ enum PresentationFixture: String {
     case held
     case delayed
     case stopped
+    case effects
     case recovery
     case onboarding
     case measurement
@@ -231,6 +232,33 @@ struct ProductionStoppedFixtureView: View {
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(.regularMaterial, in: Capsule())
                     .padding(.top, 8)
+            }
+    }
+}
+
+/// A configured production MainView for pointer, keyboard, VoiceOver, and drag
+/// verification. It writes only to the presentation UserDefaults suite and
+/// leaves every audio-starting action disabled.
+struct ProductionEffectsFixtureView: View {
+    @ObservedObject var graph: AudioGraph
+    @State private var seeded = false
+
+    var body: some View {
+        MainView(graph: graph, allowsAudioActions: false, showsOnboarding: false)
+            .safeAreaInset(edge: .top) {
+                Label("PRODUCTION EFFECTS FIXTURE · AUDIO DISABLED", systemImage: "paintbrush.pointed")
+                    .font(.caption.bold()).foregroundStyle(.purple)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.top, 8)
+            }
+            .task {
+                guard !seeded else { return }
+                seeded = true
+                graph.settings.effects = graph.plugins.filter(\.hostable)
+                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                    .prefix(3)
+                    .map { EffectSelection(pluginID: $0.id) }
             }
     }
 }

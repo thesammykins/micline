@@ -21,7 +21,9 @@ struct MeasurementView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.disabled(task != nil)
+                Button("Done") { dismiss() }
+                    .disabled(task != nil)
+                    .help("Close this measurement check.")
             }
             Text("MicLine plays 20 quiet noise probes through the chosen speaker and captures the raw microphone plus the virtual consumer input. It aligns their audio timestamps, then correlates the waveforms.")
             Label("The result is timestamp-aligned waveform lag. It is not speaker-to-microphone delay, callback delivery latency, live monitoring latency, end-to-end latency, or call-app latency.", systemImage: "info.circle")
@@ -33,18 +35,23 @@ struct MeasurementView: View {
                 ForEach(matchingConsumers) { Text($0.name).tag($0.uid) }
             }
             .disabled(task != nil)
+            .help("Choose the virtual input that matches the processed output.")
             Picker("Stimulus speaker", selection: $speakerUID) {
                 Text("Choose speaker…").tag("")
                 ForEach(physicalSpeakers) { Text($0.name).tag($0.uid) }
             }
             .disabled(task != nil)
+            .help("Choose the physical speaker that will play the audible probes.")
             if let issue = routeConfigurationIssue {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(issue, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     HStack {
                         Button("Cancel") { dismiss() }
-                        Button("Open Audio Setup…") { openAudioSetup() }.buttonStyle(.borderedProminent)
+                            .help("Close the measurement check.")
+                        Button("Open Audio Setup…") { openAudioSetup() }
+                            .buttonStyle(.borderedProminent)
+                            .help("Close this check and open Audio Setup to fix the route.")
                     }
                 }
                 .padding(12).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -65,12 +72,14 @@ struct MeasurementView: View {
                         catch { message = "Could not save report: \(error.localizedDescription)" }
                     }
                 }
+                .help("Save the unsanitized measurement JSON for local review.")
             }
             HStack {
                 Spacer()
                 if task != nil {
                     ProgressView().controlSize(.small)
                     Button("Cancel measurement") { task?.cancel() }
+                        .help("Stop the current probe sequence without saving a report.")
                 } else {
                     Button("Play bursts and measure") {
                         guard preflightIssue == nil, let consumer = selectedConsumer, let speaker = selectedSpeaker else { return }
@@ -83,6 +92,7 @@ struct MeasurementView: View {
                         }
                     }.buttonStyle(.borderedProminent)
                         .disabled(preflightIssue != nil)
+                        .help("Play 20 quiet noise probes and measure timestamp-aligned waveform lag.")
                 }
             }
         }.padding(28).frame(width: 580)

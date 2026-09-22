@@ -60,6 +60,8 @@ struct LevelMeterView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title) level")
         .accessibilityValue(accessibilityValue)
+        .accessibilityHint("RMS shows average signal energy. Sample peak shows the current highest sample, hold keeps a brief peak visible, and clip means a sample reached or exceeded 0 decibels full scale.")
+        .help("RMS is average signal energy. Sample peak is the current highest sample; hold keeps a brief peak visible. dBFS measures level below digital maximum, and CLIP means a sample reached or exceeded 0 dBFS.")
     }
 
     private var meterColor: Color {

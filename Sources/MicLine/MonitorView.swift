@@ -31,6 +31,9 @@ struct MonitorButton: View {
         .disabled(!allowsMonitoring || graph.loading || (!graph.monitoring && !supported))
         .help(helpText)
         .accessibilityLabel(graph.monitoring ? "Stop monitoring" : "Monitor processed microphone")
+        .accessibilityHint(graph.monitoring
+            ? "Stops all processing. Start again to continue without physical monitoring."
+            : "Requires confirmation before sending microphone audio to the selected physical output.")
         .confirmationDialog("Monitor on \(selected?.name ?? "selected output")?", isPresented: $confirm) {
             if let selected {
                 Button("Monitor on \(selected.name)") {

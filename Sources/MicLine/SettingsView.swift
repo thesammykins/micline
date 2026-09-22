@@ -52,6 +52,7 @@ struct GeneralSettingsView: View {
             Section("General") {
                 Toggle("Show MicLine in the Dock", isOn: $showInDock)
                     .onChange(of: showInDock) { _, visible in AppDelegate.setDockVisible(visible) }
+                    .help("Show or hide MicLine’s Dock icon. The menu-bar icon remains available.")
                 Text("The menu-bar icon remains available when the Dock icon is hidden. Closing a window does not stop processing.")
                     .font(.caption).foregroundStyle(.secondary)
                 LoginItemToggle()
@@ -62,10 +63,12 @@ struct GeneralSettingsView: View {
                     get: { updater.automaticallyChecksForUpdates },
                     set: { updater.automaticallyChecksForUpdates = $0 }))
                     .disabled(updater.availability != .ready)
+                    .help("Periodically check the configured signed update feed.")
                 Toggle("Automatically download updates", isOn: Binding(
                     get: { updater.automaticallyDownloadsUpdates },
                     set: { updater.automaticallyDownloadsUpdates = $0 }))
                     .disabled(updater.availability != .ready || !updater.automaticallyChecksForUpdates)
+                    .help("Download available signed updates after an automatic check.")
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("MicLine \(appVersion)")
@@ -74,6 +77,7 @@ struct GeneralSettingsView: View {
                     Spacer()
                     Button("Check for Updates…") { updater.checkForUpdates() }
                         .disabled(!updater.canCheckForUpdates)
+                        .help("Check the configured signed update feed now.")
                 }
             }
         }
@@ -104,6 +108,7 @@ struct AdvancedSettingsView: View {
                     Text(graph.status).textSelection(.enabled)
                     Spacer()
                     Button("Rescan") { graph.refresh() }
+                        .help("Refresh audio devices and registered Audio Unit effects.")
                 }
                 Text(graph.formatDescription).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             }
@@ -111,11 +116,13 @@ struct AdvancedSettingsView: View {
                 Text("Reviewed and sanitized, not anonymous. Device capabilities and public Audio Unit codes can fingerprint a selected setup.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Review Diagnostic Report…") { diagnostics = true }
+                    .help("Preview the exact diagnostic JSON before choosing whether to export it.")
             }
             Section("Audio Checks") {
                 LabeledContent {
                     Button("Run Check…") { Task { await graph.start(mutePhysicalOutput: true) } }
                         .disabled(!graph.canStart || graph.running || graph.loading || graph.routeIssue != nil)
+                        .help("Check the selected microphone path while keeping physical output muted.")
                 } label: {
                     VStack(alignment: .leading) {
                         Text("Check microphone path")
@@ -125,9 +132,12 @@ struct AdvancedSettingsView: View {
                 }
                 if graph.running || graph.loading {
                     Button("Stop check or processing") { graph.stop() }
+                        .help("Stop the current audio check or processing session.")
                 }
                 LabeledContent {
-                    Button("Measure…") { measuring = true }.disabled(graph.running || graph.loading)
+                    Button("Measure…") { measuring = true }
+                        .disabled(graph.running || graph.loading)
+                        .help("Open the audible loopback signal-alignment check.")
                 } label: {
                     VStack(alignment: .leading) {
                         Text("Check loopback signal alignment")
@@ -207,14 +217,18 @@ struct AudioSetupView: View {
                         Picker("Microphone", selection: Binding(get: { graph.settings.inputUID }, set: { graph.selectInput($0) })) {
                             Text("Choose…").tag("")
                             ForEach(graph.inputs.filter { !$0.isVirtual }) { Text($0.name).tag($0.uid) }
-                        }.labelsHidden().disabled(previewMissing)
+                        }
+                        .labelsHidden().disabled(previewMissing)
+                        .help("Choose the physical microphone MicLine processes.")
                     }
                     Divider()
                     deviceRow(title: "VIRTUAL PROCESSED OUTPUT", value: blackHoleStatus) {
                         Picker("Processed output", selection: Binding(get: { graph.settings.outputUID }, set: { graph.selectOutput($0) })) {
                             Text("Choose…").tag("")
                             ForEach(graph.outputs.filter(\.isVirtual)) { Text($0.name).tag($0.uid) }
-                        }.labelsHidden().disabled(previewMissing)
+                        }
+                        .labelsHidden().disabled(previewMissing)
+                        .help("Choose the virtual output used by call or recording apps.")
                     }
                     Divider()
                     deviceRow(title: "PHYSICAL MONITOR OUTPUT", value: monitorName) {
@@ -223,6 +237,7 @@ struct AudioSetupView: View {
                             ForEach(monitorOutputs) { Text($0.name).tag($0.uid) }
                         }
                         .labelsHidden().disabled(previewMissing || graph.loading)
+                        .help("Choose an optional physical output. Monitoring remains off until confirmed in the main window.")
                         .onChange(of: monitorOutputUID) { _, _ in
                             if graph.monitoring { graph.stopMonitoring() }
                         }
@@ -243,6 +258,7 @@ struct AudioSetupView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer()
                             Button("Privacy Settings…") { openMicrophoneSettings() }
+                                .help("Open macOS Microphone privacy settings.")
                         }
                     }
                 }.padding(8)
@@ -261,11 +277,14 @@ struct AudioSetupView: View {
                     }
                     HStack {
                         Link("BlackHole Setup Help…", destination: URL(string: "https://github.com/ExistentialAudio/BlackHole/wiki/Installation")!)
+                            .help("Open BlackHole’s installation guide in your browser.")
                         Spacer()
                         Button("Check Again") {
                             graph.refresh()
                             permission = AVCaptureDevice.authorizationStatus(for: .audio)
-                        }.disabled(previewMissing)
+                        }
+                        .disabled(previewMissing)
+                        .help("Refresh audio devices and microphone permission status.")
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             }
@@ -325,9 +344,11 @@ struct LoginItemToggle: View {
                     } catch { self.error = "Could not change login setting: \(error.localizedDescription)" }
                     status = SMAppService.mainApp.status
                 }))
+                .help("Register or unregister MicLine as a macOS login item.")
             Text("Opens the app after you sign in.").font(.caption).foregroundStyle(.secondary)
             if status == .requiresApproval {
                 Button("Allow in Login Items Settings…") { SMAppService.openSystemSettingsLoginItems() }
+                    .help("Open macOS Login Items settings to approve MicLine.")
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
         }
@@ -343,6 +364,7 @@ struct AutomaticProcessingToggle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle("Start processing when MicLine opens", isOn: $enabled)
+                .help("Automatically start only a saved virtual-output route. Physical monitoring stays off.")
             Text("Uses the saved virtual output only and fails stopped if unavailable. Physical monitoring always stays off.")
                 .font(.caption).foregroundStyle(.secondary)
         }

@@ -53,6 +53,9 @@ struct MicLineApp: App {
                 if fixture == .stopped {
                     ProductionStoppedFixtureView(graph: graph)
                         .defaultAppStorage(presentationDefaults)
+                } else if fixture == .effects {
+                    ProductionEffectsFixtureView(graph: graph)
+                        .defaultAppStorage(presentationDefaults)
                 } else if fixture == .onboarding {
                     ProductionOnboardingFixtureView(graph: graph)
                         .defaultAppStorage(presentationDefaults)
@@ -128,6 +131,8 @@ struct MenuView: View {
             }
         }
         .help(graph.selectedOutput?.isVirtual == false ? "Open MicLine to review the physical-output feedback warning before starting." : "Start processing")
+        .accessibilityHint(graph.selectedOutput?.isVirtual == false
+            ? "Opens the main window for feedback confirmation." : "Starts the saved microphone processing route.")
         .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
         .keyboardShortcut("s", modifiers: [.command, .shift])
         Divider()
@@ -135,6 +140,7 @@ struct MenuView: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
+        .help("Open the main MicLine window.")
         .keyboardShortcut("o")
         SettingsLink { Text("Settings…") }.keyboardShortcut(",")
         Divider()
@@ -142,6 +148,7 @@ struct MenuView: View {
             graph.stop()
             NSApp.terminate(nil)
         }
+        .help("Stop processing, save settings, and quit MicLine.")
         .keyboardShortcut("q")
         Text("Monitor \(graph.monitoring ? "on" : "off") · \(activeEffectCount) effect\(activeEffectCount == 1 ? "" : "s") active")
             .foregroundStyle(.secondary)
@@ -235,6 +242,7 @@ struct MainView: View {
                     ForEach(devices) { Text($0.name).tag($0.uid) }
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize(horizontal: false, vertical: true)
+                .help("Choose the \(title.lowercased()). Changing the route stops processing.")
             }
             Spacer(minLength: 0)
         }
@@ -250,29 +258,40 @@ struct MainView: View {
                     TextField("Gain", value: gainBinding, format: .number.precision(.fractionLength(1)))
                         .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 70)
                         .accessibilityLabel("Gain in decibels")
+                        .help("Enter gain from −24 to +12 decibels.")
                     Text("dB").foregroundStyle(.secondary)
-                    Button("Reset") { graph.settings.gainDB = 0 }.buttonStyle(.link)
+                    Button("Reset") { graph.settings.gainDB = 0 }
+                        .buttonStyle(.link)
+                        .help("Reset gain to 0 decibels.")
                 }
                 Slider(value: $graph.settings.gainDB, in: -24...12, step: 0.5) {
                     Text("Gain")
                 } minimumValueLabel: { Text("−24") } maximumValueLabel: { Text("+12") }
+                .help("Adjust microphone gain from −24 to +12 decibels.")
             }
             Divider().frame(height: 80)
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Toggle("Low cut", isOn: $graph.settings.highPassEnabled).toggleStyle(.switch)
+                    Toggle("Low cut", isOn: $graph.settings.highPassEnabled)
+                        .toggleStyle(.switch)
+                        .help("Reduce low-frequency rumble below the selected frequency.")
                     Spacer()
-                    Button("Reset") { graph.settings.highPassHz = 80 }.buttonStyle(.link)
+                    Button("Reset") { graph.settings.highPassHz = 80 }
+                        .buttonStyle(.link)
+                        .help("Reset the low-cut frequency to 80 hertz.")
                 }
                 HStack {
                     TextField("Low-cut frequency", value: lowCutBinding, format: .number.precision(.fractionLength(0)))
                         .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 76)
                         .disabled(!graph.settings.highPassEnabled)
+                        .help("Enter a low-cut frequency from 20 to 300 hertz.")
                     Text("Hz").foregroundStyle(.secondary)
                     Stepper("Low-cut frequency", value: $graph.settings.highPassHz, in: 20...300, step: 1)
                         .labelsHidden()
                         .accessibilityLabel("Low-cut frequency")
                         .accessibilityValue("\(Int(graph.settings.highPassHz)) hertz")
+                        .accessibilityHint("Adjusts the low-cut frequency by one hertz.")
+                        .help("Adjust the low-cut frequency by one hertz.")
                 }
             }
             .frame(width: 220)
@@ -289,6 +308,8 @@ struct MainView: View {
                 Spacer()
                 Toggle("Bypass", isOn: $graph.bypass).toggleStyle(.switch).controlSize(.small)
                     .accessibilityLabel("Bypass effects")
+                    .accessibilityHint("Bypasses low cut and Audio Unit effects while retaining gain.")
+                    .help("Bypass low cut and all Audio Unit effects. Gain remains active.")
             }
             if graph.settings.effects.isEmpty {
                 ContentUnavailableView("No effects added", systemImage: "slider.horizontal.3",
@@ -296,12 +317,7 @@ struct MainView: View {
                     .frame(maxWidth: .infinity, minHeight: 100)
                     .background(.background, in: RoundedRectangle(cornerRadius: 10))
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(graph.settings.effects.enumerated()), id: \.element.id) { index, effect in
-                        EffectRow(graph: graph, index: index, effect: effect)
-                        if index < graph.settings.effects.count - 1 { Divider() }
-                    }
-                }
+                EffectChainView(graph: graph)
                 .padding(.horizontal, 14)
                 .background(.background, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
@@ -313,6 +329,7 @@ struct MainView: View {
                 Button("Add Effect…") { addingEffect = true }
                     .buttonStyle(.borderedProminent)
                     .disabled(graph.loading || graph.settings.effects.count >= 16)
+                    .help("Browse registered Audio Unit effects to add to the end of the chain.")
             }
         }
     }
@@ -366,6 +383,7 @@ struct StartButton: View {
         .buttonStyle(.borderedProminent)
         .tint(graph.running ? .red : .accentColor)
         .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
+        .help(graph.running || graph.loading ? "Stop processing and save effect state." : "Start the selected processing route.")
         .confirmationDialog("Send microphone audio to \(graph.selectedOutput?.name ?? "this physical output")?", isPresented: $confirm) {
             Button("Start on \(graph.selectedOutput?.name ?? "selected output")") { Task { await graph.start() } }
             Button("Cancel", role: .cancel) {}
@@ -408,6 +426,7 @@ struct OnboardingView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(graph.selectedInput == nil || graph.selectedOutput?.isVirtual != true)
+                .help("Finish setup after choosing a microphone and virtual processed output.")
             }
         }
         .padding(28).frame(width: 620, height: height)

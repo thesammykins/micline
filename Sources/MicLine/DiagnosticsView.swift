@@ -17,7 +17,9 @@ struct DiagnosticsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close the diagnostic report without exporting it.")
             }
             Label("The allowlist excludes device names, UIDs, paths, secrets, microphone audio and effect state. Capability tuples and public Audio Unit codes may still fingerprint your setup; this report is not anonymous.", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout).foregroundStyle(.orange)
@@ -36,13 +38,17 @@ struct DiagnosticsView: View {
                     graph.diagnostics.clear()
                     refresh()
                 }
+                .help("Clear recorded diagnostic events and refresh this exact JSON preview.")
                 Text("Clear refreshes this exact preview; other report fields remain.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Export Reviewed JSON…") { export() }.buttonStyle(.borderedProminent)
+                Button("Export Reviewed JSON…") { export() }
+                    .buttonStyle(.borderedProminent)
+                    .help("Save exactly the JSON shown above to a local file.")
                 Button("Open GitHub Website…") {
                     if let url = graph.diagnosticReport().issueURL { NSWorkspace.shared.open(url) }
                 }
+                .help("Open MicLine’s new-issue page. Nothing is submitted automatically.")
             }
             Text("Export is local. Attaching the reviewed file and submitting an issue are separate manual actions.")
                 .font(.caption).foregroundStyle(.secondary)
