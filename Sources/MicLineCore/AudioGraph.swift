@@ -18,6 +18,8 @@ public final class AudioGraph: ObservableObject {
     @Published public private(set) var inputDB: Double = -90
     @Published public private(set) var outputDB: Double = -90
     @Published public private(set) var outputPeak: Float = 0
+    @Published public private(set) var inputLevel = MeterReading.silence
+    @Published public private(set) var outputLevel = MeterReading.silence
     @Published public private(set) var formatDescription = "Audio is stopped"
     @Published public var genericEditorID: UUID?
 
@@ -30,6 +32,9 @@ public final class AudioGraph: ObservableObject {
     private var editors: [UUID: NSWindow] = [:]
     private let inputMeter = MeterState()
     private let outputMeter = MeterState()
+    private var inputBallistics = MeterBallistics()
+    private var outputBallistics = MeterBallistics()
+    private var lastMeterPoll = ProcessInfo.processInfo.systemUptime
     private var timer: Timer?
     private var observer: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
@@ -137,6 +142,11 @@ public final class AudioGraph: ObservableObject {
         monitoring = false
         inputMeter.reset()
         outputMeter.reset()
+        inputBallistics.reset()
+        outputBallistics.reset()
+        inputLevel = .silence
+        outputLevel = .silence
+        lastMeterPoll = ProcessInfo.processInfo.systemUptime
         inputDB = -90; outputDB = -90; outputPeak = 0
         formatDescription = "Audio is stopped"
         status = stateError ?? message
@@ -365,11 +375,19 @@ public final class AudioGraph: ObservableObject {
     }
 
     private func poll() {
+        let now = ProcessInfo.processInfo.systemUptime
         if running {
-            inputDB = LevelMath.decibels(inputMeter.rms)
-            outputDB = LevelMath.decibels(outputMeter.rms)
-            outputPeak = outputMeter.peak
+            let elapsed = max(0, now - lastMeterPoll)
+            inputLevel = inputBallistics.update(rms: inputMeter.rms,
+                samplePeak: inputMeter.takePeak(), elapsed: elapsed)
+            outputLevel = outputBallistics.update(rms: outputMeter.rms,
+                samplePeak: outputMeter.takePeak(), elapsed: elapsed)
+            inputDB = inputLevel.rmsDBFS
+            outputDB = outputLevel.rmsDBFS
+            outputPeak = outputLevel.samplePeakDBFS <= -90
+                ? 0 : Float(pow(10, outputLevel.samplePeakDBFS / 20))
         }
+        lastMeterPoll = now
         pollCount += 1
         if pollCount % 20 == 0 {
             let updated = DeviceRegistry.devices()

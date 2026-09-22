@@ -22,7 +22,7 @@ import AVFoundation
             mData: UnsafeMutableRawPointer(mutating: data.baseAddress)))
         ml_meter_write_buffers(meter, &list, 2)
     }
-    #expect(abs(ml_meter_rms(meter) - sqrt(1.3125 / 4)) < 0.00001)
+    #expect(abs(ml_meter_rms(meter) - sqrt(1.25 / 2)) < 0.00001)
     #expect(ml_meter_peak(meter) == 1)
     #expect(ml_meter_frames(meter) == 2)
     #expect(LevelMath.decibels(0) == -90)

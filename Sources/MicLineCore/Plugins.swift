@@ -83,7 +83,16 @@ public struct SessionSettings: Codable, Equatable {
 
 public enum LevelMath {
     public static func decibels(_ amplitude: Float) -> Double {
+        samplePeakDBFS(amplitude)
+    }
+
+    public static func samplePeakDBFS(_ amplitude: Float) -> Double {
         guard amplitude.isFinite, amplitude > 0 else { return -90 }
         return max(-90, 20 * log10(Double(amplitude)))
+    }
+
+    public static func rmsDBFS(_ rms: Float) -> Double {
+        guard rms.isFinite, rms > 0 else { return -90 }
+        return max(-90, 20 * log10(Double(rms) * sqrt(2)))
     }
 }

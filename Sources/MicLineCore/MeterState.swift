@@ -7,6 +7,7 @@ final class MeterState: @unchecked Sendable {
     deinit { ml_meter_destroy(pointer) }
     var rms: Float { ml_meter_rms(pointer) }
     var peak: Float { ml_meter_peak(pointer) }
+    func takePeak() -> Float { ml_meter_take_peak(pointer) }
     var frames: UInt64 { ml_meter_frames(pointer) }
     func reset() { ml_meter_reset(pointer) }
     func write(_ buffer: AVReadOnlyAudioPCMBuffer) {
