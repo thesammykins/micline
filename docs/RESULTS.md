@@ -55,8 +55,12 @@ Earlier reviews corrected categorical isolation claims and stale routing docs.
 ## Packaging and release boundary
 
 The artifact-only workflow uses pinned actions, minimal permissions, hosted
-`xcode-27`, a protected signing environment, explicit main-ref/confirmation/variable
-gates and ephemeral credentials. Ordinary CI uses no signing secrets. A real
+`xcode-27`, and explicit main-ref/confirmation/variable gates before credential
+import. The `release-signing` environment has a main-branch policy, but no required
+reviewer or configured secrets/variables. Enforcement of its protection is not
+verified on the current private-repository plan; it must not be treated as a
+protected credential boundary. Hosted signing remains unconfigured and fail-closed.
+Ordinary CI uses no signing secrets. A real
 [macOS 27 CI run](https://github.com/thesammykins/micline/actions/runs/35681462631)
 passed for the initial integrated product candidate; later commits require their
 own green check before acceptance.
