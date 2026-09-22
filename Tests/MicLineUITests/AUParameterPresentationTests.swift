@@ -1,4 +1,5 @@
 import AudioToolbox
+import Foundation
 import Testing
 import MicLineUI
 
@@ -58,6 +59,32 @@ struct AUParameterPresentationTests {
                 )
                 #expect(abs(roundTrip - position) < 0.000_001)
             }
+        }
+    }
+
+    @Test("Display scales match independently calculated interior values")
+    func displayScaleKnownValues() {
+        // Expected positions come from the signed mathematical transforms, not
+        // from the inverse under test. An all-linear implementation must fail.
+        let cases: [(AudioUnitParameterOptions, Double, Double, Double, Double)] = [
+            ([], -3, 11, 2, 5.0 / 14.0),
+            (.flag_DisplaySquareRoot, -9, 16, -4, 1.0 / 7.0),
+            (.flag_DisplaySquared, -3, 7, 2, 13.0 / 58.0),
+            (.flag_DisplayCubed, -2, 5, 3, 35.0 / 133.0),
+            (.flag_DisplayCubeRoot, -8, 27, 1, 3.0 / 5.0),
+            (.flag_DisplayExponential, 0, log(9), log(3), 0.25),
+            (.flag_DisplayLogarithmic, 1, 100, 10, 0.5),
+            (.flag_DisplayLogarithmic, 1e-12, 1e-2, 1e-7, 0.5),
+            (.flag_DisplayLogarithmic, -2, 5, 0.8, 0.4),
+        ]
+
+        for (flags, minimum, maximum, value, position) in cases {
+            #expect(abs(AUParameterPresentation.linearPosition(
+                for: value, minimum: minimum, maximum: maximum, flags: flags
+            ) - position) < 1e-9)
+            #expect(abs(AUParameterPresentation.parameterValue(
+                at: position, minimum: minimum, maximum: maximum, flags: flags
+            ) - value) < abs(value) * 1e-9)
         }
     }
 
