@@ -117,7 +117,10 @@ needed for Developer ID distribution. GitHub uses the `xcode-27` preview runner;
 macOS 26 runners cannot execute this minimum-macOS-27 app.
 
 Diagnostics are under **Settings → Advanced**. Explicit launch probes use a separate
-preferences domain and store metrics, not microphone recordings:
+preferences domain and store metrics, not microphone recordings. The device/plugin
+inventory outputs and launch-probe JSON below are not sanitized; see
+[report privacy](docs/PRIVACY.md#developer-reports-and-inventories) before sharing.
+Offline output contains synthetic DSP timing metrics:
 
 ```sh
 swift run -c release MicLineMeasure --devices

@@ -161,7 +161,7 @@ struct AboutSettingsView: View {
             Text("Version \(version) (\(build))").foregroundStyle(.secondary)
             GroupBox("Privacy") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("MicLine processes microphone audio on this Mac. It never saves microphone audio. Diagnostic reports must be previewed before local export or manual issue attachment.")
+                    Text("MicLine processes audio locally without recording it. Only Review Diagnostic Report offers a sanitized JSON preview. Measurement and command-line reports are not sanitized; review them before sharing.")
                     HStack {
                         Link("Privacy Details…", destination: URL(string: "https://github.com/thesammykins/micline#privacy")!)
                         Link("Acknowledgements…", destination: URL(string: "https://github.com/thesammykins/micline/blob/main/NOTICE")!)

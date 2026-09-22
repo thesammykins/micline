@@ -26,6 +26,8 @@ struct MeasurementView: View {
             Text("MicLine plays 20 quiet noise probes through the chosen speaker and captures the raw microphone plus the virtual consumer input. It aligns their audio timestamps, then correlates the waveforms.")
             Label("The result is timestamp-aligned waveform lag. It is not speaker-to-microphone delay, callback delivery latency, live monitoring latency, end-to-end latency, or call-app latency.", systemImage: "info.circle")
                 .font(.callout).foregroundStyle(.secondary)
+            Text("Measurement JSON is not sanitized: it includes device names, identifiers and saved Audio Unit state. Review the exported file before sharing.")
+                .font(.caption).foregroundStyle(.secondary)
             Picker("Consumer input", selection: $consumerUID) {
                 Text("Choose virtual input…").tag("")
                 ForEach(matchingConsumers) { Text($0.name).tag($0.uid) }
@@ -84,6 +86,7 @@ struct MeasurementView: View {
                 }
             }
         }.padding(28).frame(width: 580)
+            .fixedSize(horizontal: false, vertical: true)
             .onAppear { selectMatchingConsumerIfNeeded() }
             .onChange(of: graph.settings.outputUID) { _, _ in selectMatchingConsumerIfNeeded() }
             .onChange(of: graph.inputs) { _, _ in selectMatchingConsumerIfNeeded() }
