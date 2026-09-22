@@ -121,10 +121,12 @@ public final class AudioGraph: ObservableObject {
         diagnostics.record(.effectRemoved)
     }
     public func move(_ id: UUID, by offset: Int) {
-        guard let from = settings.effects.firstIndex(where: { $0.id == id }),
+        guard offset != 0, let from = settings.effects.firstIndex(where: { $0.id == id }),
               settings.effects.indices.contains(from + offset) else { return }
         stop()
-        settings.effects.swapAt(from, from + offset)
+        var effects = settings.effects
+        effects.insert(effects.remove(at: from), at: from + offset)
+        settings.effects = effects
         diagnostics.record(.effectReordered)
     }
 
