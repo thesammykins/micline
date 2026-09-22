@@ -291,6 +291,19 @@ public final class AudioGraph: ObservableObject {
             observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: graph, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.generation == token else { return }
+                    if self.monitoring, graph.isRunning, let privateRoute = self.privateRoute {
+                        do {
+                            try graph.inputNode.withAudioUnit { inputUnit in
+                                try graph.outputNode.withAudioUnit { outputUnit in
+                                    try privateRoute.verifyMaps(inputUnit: inputUnit, outputUnit: outputUnit)
+                                }
+                            }
+                            return
+                        } catch {
+                            // A genuine route change falls through to the same
+                            // fail-closed stop used by every other configuration change.
+                        }
+                    }
                     self.stop(message: "Audio configuration changed. Check devices and start again.")
                     self.refresh()
                 }
