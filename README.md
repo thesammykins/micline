@@ -79,6 +79,16 @@ Bundling/integration beyond the external device boundary needs licensing review.
 
 ## Effects and limits
 
+Drag the six-dot grip on an effect row to place it before or after another effect.
+With the grip focused, Option–Up and Option–Down move it one position; VoiceOver
+also offers effect-specific move actions. The x button removes that effect.
+Reordering and removal stop processing; press Start when the chain is ready.
+
+Controls prefers the Audio Unit's native editor, including while stopped. If the
+native editor is unavailable or does not respond within ten seconds, MicLine
+offers generic parameter controls instead. Third-party editors may have their
+own first-use setup.
+
 - **Audio Units:** real registered AU effects, ordered processing and native editor
   support. Third-party AUv2 code can run in-process;
   crashes, malicious plugins and every editor are not isolated or certified.
