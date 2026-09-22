@@ -21,11 +21,14 @@ import Testing
     let device = AudioDevice(id: 999, uid: privateText, name: privateText,
         inputChannels: 1, outputChannels: 0, sampleRate: 48_000,
         bufferFrames: 512, isVirtual: false)
+    let monitor = AudioDevice(id: 998, uid: privateText, name: privateText,
+        inputChannels: 0, outputChannels: 2, sampleRate: 48_000,
+        bufferFrames: 256, isVirtual: false)
     let plugin = PluginRecord(id: privateText, name: privateText, format: .au,
         location: privateText, type: 1, subtype: 2, manufacturer: 3)
     let report = DiagnosticReport(appVersion: privateText, buildVersion: "12",
         osVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 1),
-        settings: settings, input: device, output: nil, plugins: [plugin],
+        settings: settings, input: device, output: nil, monitor: monitor, plugins: [plugin],
         running: false, monitoring: false, events: [])
     let text = try report.json()
     #expect(!text.contains(privateText))
@@ -34,6 +37,8 @@ import Testing
     #expect(!text.contains("location"))
     #expect(report.appVersion == "unavailable")
     #expect(report.input?.sampleRate == 48_000)
+    #expect(report.monitor?.outputChannels == 2)
+    #expect(report.monitor?.bufferFrames == 256)
     #expect(report.effects.first?.subtype == 2)
     let url = try #require(report.issueURL)
     #expect(url.absoluteString.utf8.count < 2_000)

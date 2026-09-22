@@ -13,7 +13,7 @@ affected component. Attaching an export is optional and manual.
 ## Exactly what diagnostics contain
 
 - App/build and macOS numeric versions.
-- Selected input/output channel counts, nominal sample rates, buffer sizes and
+- Selected input/output/monitor channel counts, nominal sample rates, buffer sizes and
   whether each endpoint is virtual. Device names, UIDs and transient HAL IDs are omitted.
 - Selected Audio Unit type/subtype/manufacturer codes and per-effect bypass state.
   These public component codes help identify the relevant effect without exporting

@@ -65,6 +65,7 @@ public struct DiagnosticReport: Encodable {
     public let macOS: String
     public let input: Device?
     public let output: Device?
+    public let monitor: Device?
     public let effects: [Effect]
     public let running: Bool
     public let monitoring: Bool
@@ -75,6 +76,7 @@ public struct DiagnosticReport: Encodable {
 
     public init(appVersion: String, buildVersion: String, osVersion: OperatingSystemVersion,
                 settings: SessionSettings, input: AudioDevice?, output: AudioDevice?,
+                monitor: AudioDevice? = nil,
                 plugins: [PluginRecord], running: Bool, monitoring: Bool,
                 events: [DiagnosticLog.Entry]) {
         self.appVersion = Self.numericVersion(appVersion)
@@ -82,6 +84,7 @@ public struct DiagnosticReport: Encodable {
         macOS = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
         self.input = input.map(Device.init)
         self.output = output.map(Device.init)
+        self.monitor = monitor.map(Device.init)
         self.running = running
         self.monitoring = monitoring
         var safeSettings = settings
