@@ -4,7 +4,7 @@
 A native macOS 27 menu-bar microphone processor. This first increment supplies a real Apple Audio Unit processing path and explicit integration boundaries for VST hosting and a virtual microphone driver.
 
 ## Visual references
-The supplied macOS 27 Figma community library, Apple Human Interface Guidelines, and Explore SwiftUI. The user-provided local `.fig` was imported into OpenPencil. Keep original product designs and provenance, not a redistributed standalone Apple library.
+Use the reviewed original MicLine design with native SwiftUI/AppKit controls, system typography, semantic colors and accessible states. Apple Human Interface Guidelines and Explore SwiftUI are references, not redistributed resources. Earlier drafts with unverified provenance were removed in the scoped pre-public cleanup; historical references to them do not grant redistribution rights. See [design provenance](../../design/README.md). Design approval does not replace runtime accessibility, resizing or audio verification.
 
 ## Behavior
 1. Launch installs a persistent menu-bar control and presents the main window without restoring a closed scene. Open MicLine reopens the processing window. Closing the window does not quit. Two independent default-off options appear in onboarding and Settings: launch at login (SMAppService) and start processing when opening MicLine. Automatic processing uses only the saved virtual-output route after setup is complete; missing devices or denied access leave audio stopped. It never restores physical monitoring. Microphone audio is not recorded to disk.

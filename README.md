@@ -3,7 +3,7 @@
 A native macOS 27 microphone processor. Choose your microphone, arrange Audio Unit
 effects, and send the filtered signal to BlackHole for your call or recording app.
 Gain, low cut, live levels and bypass stay close at hand in a compact window and
-menu-bar popover. This is a development app, not a complete Wave Link replacement.
+native menu-bar menu.
 
 If MicLine is useful to you, you can support its development.
 
@@ -42,12 +42,14 @@ Disable automatic processing if you do not want the microphone opened on launch.
 
 ### Listen while processing
 
-Choose a physical stereo device under **Monitor**, then enable the switch and
-confirm the named output. Use headphones: speakers can feed back into the mic.
+Choose a physical stereo monitor output in **Settings → Audio Setup**, then use
+the ear button beside the main window's output selector and confirm the named
+output. Use headphones: speakers can feed back into the mic.
 Monitoring sends the same processed mix to BlackHole and your listening device,
 follows the main gain, and never changes hardware volume. All three devices must
-already use the same sample rate. Turning monitoring off stops both outputs;
-press Start to resume BlackHole only. Monitoring never resumes automatically.
+already use the same sample rate. Turning monitoring off or changing its device
+stops both outputs; press Start to resume BlackHole only. Monitoring never resumes
+automatically.
 
 ## BlackHole setup and recovery
 
@@ -86,6 +88,11 @@ Bundling/integration beyond the external device boundary needs licensing review.
 - No claim of zero latency: the diagnostic reports timestamp-aligned waveform lag,
   not callback delivery or call-app end-to-end latency. Correlation below a threshold
   is not proof of zero leakage. Long-duration drift and device recovery need more testing.
+
+## Privacy
+
+See [Privacy and diagnostic reports](docs/PRIVACY.md) for local storage, report
+contents, manual sharing and update-network behavior.
 
 ## Build and test
 
