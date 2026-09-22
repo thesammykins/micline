@@ -62,6 +62,9 @@ struct MicLineApp: App {
         }
         .defaultSize(width: 680, height: 570)
         .defaultLaunchBehavior(.presented)
+        // A restored closed window can skip its startup task, including the
+        // user's automatic-processing opt-in. Present a fresh main scene.
+        .restorationBehavior(.disabled)
         .windowResizability(.contentMinSize)
 
         Settings { SettingsView(graph: graph) }
@@ -217,7 +220,7 @@ struct MainView: View {
         .task { if !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
         .sheet(isPresented: $setup) {
             VStack(alignment: .leading, spacing: 20) {
-                ScrollView { AudioSetupView(graph: graph) }.frame(maxHeight: 580)
+                ScrollView { AudioSetupView(graph: graph) }.frame(height: 580)
                 HStack {
                     Spacer()
                     Button("Continue") {
