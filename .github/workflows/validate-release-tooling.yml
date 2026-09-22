@@ -9,6 +9,9 @@ on:
       - "Tests/**"
       - "Package.swift"
       - "Resources/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "docs/**"
   push:
     paths:
       - ".github/workflows/**"
@@ -17,6 +20,9 @@ on:
       - "Tests/**"
       - "Package.swift"
       - "Resources/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "docs/**"
 
 permissions:
   contents: read

@@ -73,8 +73,11 @@ and validates the staple. Delete the temporary key file after use.
 
 ## GitHub Actions configuration
 
-Create a protected `release-signing` environment with required reviewers. Add
-these environment secrets:
+Create a protected `release-signing` environment with required reviewers, prevent
+self-review, and restrict deployment branches to `main`. The workflow also checks
+the `main` ref before credential use. If the repository's GitHub plan does not
+support those protections, leave signed builds disabled. Add these environment
+secrets using secure credential tooling, never plaintext chat or source:
 
 | Secret | Value |
 | --- | --- |
