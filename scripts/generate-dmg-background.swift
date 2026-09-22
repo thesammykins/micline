@@ -62,6 +62,11 @@ for x in stride(from: 24, through: width - 24, by: 5) {
 }
 waveform.stroke()
 
+// Finder controls native icon-label color. A single neutral rail gives both
+// genuine labels enough contrast without imitating per-item buttons.
+NSColor(calibratedWhite: 0.463, alpha: 1).setFill()
+NSRect(x: 0, y: 126, width: width, height: 36).fill()
+
 let wellColor = NSColor(calibratedWhite: 1, alpha: 0.055)
 for centerX in [170, 490] {
     let well = NSBezierPath(roundedRect: NSRect(x: centerX - 68, y: 142, width: 136, height: 136), xRadius: 32, yRadius: 32)

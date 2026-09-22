@@ -94,9 +94,10 @@ the Swift background generator without mounting a disk image or opening Finder.
 The mounted image must be checked at actual scale in both Finder appearances.
 Finder controls icon-label color and exposes no supported label-color or
 label-visibility setting. Do not depend on a global preference, invisible item
-names, or unsupported `.DS_Store` edits. The production background remains a
-design gate until its native labels are independently accepted in the mounted
-image.
+names, or unsupported `.DS_Store` edits. The background uses one continuous
+neutral rail behind both genuine Finder labels; it must not replace them with
+baked text or per-item label pills. Verify selected and unselected native labels
+in the mounted image before release.
 
 For notarization, place an App Store Connect API key in a temporary file and add
 `--notarize` with these environment variables:
