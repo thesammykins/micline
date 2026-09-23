@@ -236,19 +236,16 @@ private struct EffectReorderGrip: View {
     let moveEarlier: () -> Void
     let moveLater: () -> Void
     @State private var hovered = false
-    @GestureState private var pressed = false
     @FocusState private var keyboardFocused: Bool
     @AccessibilityFocusState private var voiceOverFocused: Bool
 
     var body: some View {
         EffectGripDots()
         .frame(width: 28, height: 32)
-        .background(Color.secondary.opacity(pressed || dragging ? 0.22 : hovered ? 0.10 : 0),
+        .background(Color.secondary.opacity(dragging ? 0.22 : hovered ? 0.10 : 0),
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
-        .simultaneousGesture(DragGesture(minimumDistance: 0)
-            .updating($pressed) { _, pressed, _ in pressed = true })
         .focusable(true, interactions: .edit)
         .focused($keyboardFocused)
         .onKeyPress(keys: [.upArrow, .downArrow]) { press in
