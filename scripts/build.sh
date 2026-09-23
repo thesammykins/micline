@@ -252,8 +252,11 @@ codesign "${main_sign_arguments[@]}" "$APP"
 
 codesign --verify --deep --strict --verbose=2 "$APP"
 if [[ "$SIGNING_MODE" == "developer-id" ]]; then
-    codesign --display --verbose=4 "$APP" 2>&1 | grep -q 'flags=.*runtime' || \
+    signature_details="$(codesign --display --verbose=4 "$APP" 2>&1)"
+    grep -q 'CodeDirectory.*flags=.*runtime' <<< "$signature_details" || \
         die "Developer ID app is not signed with the hardened runtime"
+    grep -q '^Timestamp=' <<< "$signature_details" || \
+        die "Developer ID app is missing a trusted timestamp"
 fi
 
 printf '%s\n' "$APP"
