@@ -153,6 +153,10 @@ esac
 IDENTITY="${MICLINE_SIGNING_CERTIFICATE_SHA1:-}"
 [[ "$IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] || die "MICLINE_SIGNING_CERTIFICATE_SHA1 must be a 40-character certificate fingerprint"
 IDENTITY="$(printf '%s' "$IDENTITY" | tr '[:lower:]' '[:upper:]')"
+if [[ "$SIGNING_MODE" == "developer-id" ]]; then
+    [[ "$IDENTITY" == "86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E" ]] || \
+        die "developer-id builds require the dedicated MicLine certificate fingerprint"
+fi
 [[ "$(security find-identity -v -p codesigning | awk -v fingerprint="$IDENTITY" -v label="$EXPECTED_IDENTITY_TYPE" '
     toupper($2) == fingerprint && index($0, "\"" label) { count++ }
     END { print count + 0 }

@@ -80,6 +80,8 @@ if ((SIGN_DMG)); then
     [[ "$SIGNING_FINGERPRINT" =~ ^[[:xdigit:]]{40}$ ]] || \
         die "MICLINE_SIGNING_CERTIFICATE_SHA1 must be a 40-character certificate fingerprint with --sign-dmg"
     SIGNING_FINGERPRINT="$(printf '%s' "$SIGNING_FINGERPRINT" | tr '[:lower:]' '[:upper:]')"
+    [[ "$SIGNING_FINGERPRINT" == "86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E" ]] || \
+        die "signed MicLine DMGs require the dedicated MicLine certificate fingerprint"
     [[ "$(security find-identity -v -p codesigning | awk -v fingerprint="$SIGNING_FINGERPRINT" '
         toupper($2) == fingerprint && /"Developer ID Application:/ { count++ }
         END { print count + 0 }

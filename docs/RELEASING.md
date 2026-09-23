@@ -50,19 +50,21 @@ exact SHA-1 fingerprint, not the common name shared by a developer's certificate
 
 ```sh
 MICLINE_SIGNING_MODE=developer-id \
-MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_MICLINE_CERTIFICATE' \
+MICLINE_SIGNING_CERTIFICATE_SHA1=86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E \
 MICLINE_VERSION=0.1.0 \
 MICLINE_BUILD_NUMBER=1 \
 MICLINE_REQUIRE_APP_ICON=1 \
-MICLINE_SPARKLE_FEED_URL='https://updates.example.com/micline/appcast.xml' \
-MICLINE_SPARKLE_PUBLIC_ED_KEY='BASE64_PUBLIC_KEY' \
+MICLINE_SPARKLE_FEED_URL='https://thesammykins.github.io/micline/updates/appcast.xml' \
+MICLINE_SPARKLE_PUBLIC_ED_KEY='FOJmOcZaeXTrpsrD+4J6ZG7vWQJyHs55aWrqALlRLcY=' \
 ./scripts/build.sh
 ```
 
 Developer ID mode first verifies that the fingerprint uniquely identifies an
 available Developer ID Application identity, then signs with that fingerprint.
-The certificate must be newly issued for MicLine; the script cannot infer its
-provenance from the common name or team. Do not supply a Trellis fingerprint.
+Both the build and signed DMG scripts reject any fingerprint other than the
+reviewed MicLine identity. Its provenance is an operator-established fact;
+matching the common name or team alone cannot establish it. Never supply a
+Trellis fingerprint.
 Developer ID mode always enables the hardened runtime and a trusted timestamp.
 The script never falls back to ad-hoc signing. It also requires the release
 version, build number, and public Sparkle metadata:
@@ -271,7 +273,8 @@ After the independent gate is enforceable and explicitly approved, dispatch
 `source_sha`, version, integer build number, and `SIGN_ARTIFACT_ONLY`. The job
 rejects a SHA that differs from `github.sha` at dispatch and verifies checkout
 before credential access. Leave notarization disabled until its separate gate
-has been validated. The job:
+has been validated. A DMG produced without notarization is a signing smoke test,
+not a distributable release. The job:
 
 1. verifies macOS and SDK 27 before loading credentials;
 2. tests the exact checked-out source and pinned Sparkle fixture without credentials;
@@ -326,10 +329,12 @@ than weakening the release globally.
 
 A private GitHub repository is not a usable public Sparkle feed. Reserve
 `https://thesammykins.github.io/micline/updates/appcast.xml` for the eventual
-public project Pages site of this repository, and use public immutable GitHub
+public project Pages site of this repository, and use public, versioned GitHub
 Release asset URLs from the same repository for enclosure downloads only after
-publication is separately approved. A Pages site is public even when its source
-repository is private, so Pages deployment must remain disabled now. Do not use
+publication is separately approved. Release assets can be replaced at their URL;
+Sparkle's EdDSA signature must still authenticate the downloaded bytes. A Pages
+site is public even when its source repository is private, so Pages deployment
+must remain disabled now. Do not use
 `raw.githubusercontent.com` on a private branch as a feed or embed a GitHub
 token in the app. Until the feed and downloads exist, the production updater
 cannot deliver an update; its signed-feed and archive verification still fail
