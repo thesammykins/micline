@@ -150,6 +150,17 @@ struct AdvancedSettingsView: View {
                 Text("Audio Units: \(graph.plugins.filter(\.hostable).count) registered")
                 Text("VST2 and VST3 filesystem candidates are unvalidated and cannot be hosted in this version.")
                     .font(.callout).foregroundStyle(.secondary)
+                ForEach(graph.plugins.filter { !$0.hostable }) { candidate in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(candidate.name)
+                        Text("\(candidate.format.rawValue) · Unvalidated · Cannot be hosted")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let location = candidate.location {
+                            Text(location).font(.caption).foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped).padding(.top, 8)

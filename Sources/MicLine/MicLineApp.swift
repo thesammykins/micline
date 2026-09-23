@@ -149,7 +149,7 @@ struct MenuView: View {
         }
         .help("Stop processing, save settings, and quit MicLine.")
         .keyboardShortcut("q")
-        Text("Monitor \(graph.monitoring ? "on" : "off") · \(activeEffectCount) effect\(activeEffectCount == 1 ? "" : "s") active")
+        Text("Monitor \(graph.monitoring ? "on" : "off") · \(activeEffectCount) effect\(activeEffectCount == 1 ? "" : "s") \(graph.running ? "active" : "enabled")")
             .foregroundStyle(.secondary)
     }
 
@@ -165,7 +165,7 @@ struct MenuView: View {
     }
 
     private var activeEffectCount: Int {
-        graph.bypass ? 0 : graph.settings.effects.filter { !$0.bypassed }.count
+        graph.running && graph.bypass ? 0 : graph.settings.effects.filter { !$0.bypassed }.count
     }
 }
 
