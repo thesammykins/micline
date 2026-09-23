@@ -32,6 +32,10 @@ struct EffectReorderingTests {
             == [second, third, fourth, first])
         #expect(offset(ids, effect: second, destination: first, edge: .after) == nil)
         #expect(offset(ids, effect: third, destination: fourth, edge: .before) == nil)
+        #expect(offset(ids, effect: second, destination: second, edge: .before) == nil)
+        #expect(offset(ids, effect: second, destination: second, edge: .after) == nil)
+        #expect(offset(ids, effect: first, destination: second, edge: .before) == nil)
+        #expect(offset(ids, effect: fourth, destination: third, edge: .after) == nil)
     }
 
     @Test("Rejects foreign sessions, stale IDs, and duplicate persisted IDs")

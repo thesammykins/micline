@@ -1,4 +1,5 @@
 import AudioToolbox
+import AppKit
 import SwiftUI
 import MicLineCore
 import MicLineUI
@@ -7,12 +8,15 @@ struct EffectChainView: View {
     @ObservedObject var graph: AudioGraph
     @State private var dragSessionID = UUID()
     @State private var draggingID: UUID?
+    @State private var dropTarget: UUID?
+    @State private var dropEdge: EffectDropEdge?
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(graph.settings.effects.enumerated()), id: \.element.id) { index, effect in
                 EffectRow(graph: graph, index: index, effect: effect,
-                    dragSessionID: dragSessionID, draggingID: $draggingID)
+                    dragSessionID: dragSessionID, draggingID: $draggingID,
+                    dropTarget: $dropTarget, dropEdge: $dropEdge)
                 if index < graph.settings.effects.count - 1 { Divider() }
             }
         }
@@ -25,16 +29,77 @@ struct EffectRow: View {
     let effect: EffectSelection
     let dragSessionID: UUID
     @Binding var draggingID: UUID?
-    @State private var dropEdge: EffectDropEdge?
+    @Binding var dropTarget: UUID?
+    @Binding var dropEdge: EffectDropEdge?
     @State private var rowHeight: CGFloat = 1
+    @State private var rowWidth: CGFloat = 1
 
     private var name: String { graph.plugins.first { $0.id == effect.pluginID }?.name ?? "Missing effect" }
     private var payload: EffectDragPayload { EffectDragPayload(effectID: effect.id, sessionID: dragSessionID) }
+    private var activeEdge: EffectDropEdge? { dropTarget == effect.id ? dropEdge : nil }
 
     var body: some View {
-        HStack(spacing: 12) {
+        rowContent
+        .opacity(draggingID == effect.id ? 0.42 : 1)
+        .padding(.vertical, 10)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear {
+                    rowHeight = geometry.size.height
+                    rowWidth = geometry.size.width
+                }
+                .onChange(of: geometry.size) { _, size in
+                    rowHeight = size.height
+                    rowWidth = size.width
+                }
+            }
+        }
+        .overlay(alignment: activeEdge == .after ? .bottom : .top) {
+            if let activeEdge {
+                HStack(spacing: 0) {
+                    Circle().frame(width: 6, height: 6)
+                    Rectangle().frame(height: 2)
+                }
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 2)
+                .offset(y: activeEdge == .after ? 3 : -3)
+                .accessibilityHidden(true)
+            }
+        }
+        .dropDestination(for: EffectDragPayload.self) { items, session in
+            guard session.localSession != nil, items.count == 1,
+                  let item = items.first else { return }
+            // Transfer completion may outlive the source's visual drag state.
+            // performDrop validates the payload's session and current effect IDs.
+            performDrop(item, edge: edge(for: session.location.y))
+        }
+        .onDropSessionUpdated { session in
+            switch session.phase {
+            case .entering, .active:
+                let candidate = edge(for: session.location.y)
+                if session.localSession != nil, session.itemsCount == 1,
+                   validOffset(edge: candidate) != nil {
+                    dropTarget = effect.id
+                    dropEdge = candidate
+                } else if dropTarget == effect.id {
+                    clearDropTarget()
+                }
+            case .exiting, .ended, .dataTransferCompleted:
+                if dropTarget == effect.id { clearDropTarget() }
+            @unknown default:
+                if dropTarget == effect.id { clearDropTarget() }
+            }
+        }
+        .dropConfiguration { session in
+            DropConfiguration(operation: session.localSession != nil && session.itemsCount == 1 &&
+                validOffset(edge: edge(for: session.location.y)) != nil ? .move : .forbidden)
+        }
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 10) {
             reorderGrip
-            Text(String(format: "%02d", index + 1)).monospacedDigit().foregroundStyle(.secondary).frame(width: 24)
+            Text(String(format: "%02d", index + 1)).monospacedDigit().foregroundStyle(.secondary).frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).lineLimit(1).foregroundStyle(effect.bypassed || graph.bypass ? .secondary : .primary)
                 Text(statusText)
@@ -63,55 +128,47 @@ struct EffectRow: View {
                 .accessibilityHint("Stops processing and removes this effect from the chain.")
         }
         .buttonStyle(.bordered)
-        .padding(.vertical, 10)
-        .background {
-            GeometryReader { geometry in
-                Color.clear.onAppear { rowHeight = geometry.size.height }
-                    .onChange(of: geometry.size.height) { _, height in rowHeight = height }
-            }
-        }
-        .overlay(alignment: dropEdge == .after ? .bottom : .top) {
-            if dropEdge != nil {
-                Capsule().fill(Color.accentColor).frame(height: 3).padding(.horizontal, 2)
-                    .accessibilityHidden(true)
-            }
-        }
-        .dropDestination(for: EffectDragPayload.self) { items, session in
-            guard let item = items.first, items.count == 1 else { return }
-            performDrop(item, edge: edge(for: session.location.y))
-        }
-        .onDropSessionUpdated { session in
-            switch session.phase {
-            case .entering, .active:
-                guard draggingID != nil, draggingID != effect.id else { dropEdge = nil; return }
-                dropEdge = edge(for: session.location.y)
-            case .exiting, .ended, .dataTransferCompleted:
-                dropEdge = nil
-            @unknown default:
-                dropEdge = nil
-            }
-        }
-        .dropConfiguration { _ in
-            DropConfiguration(operation: draggingID == nil ? .forbidden : .move)
-        }
     }
 
     private var reorderGrip: some View {
-        EffectReorderGrip(name: name, position: index + 1,
+        EffectReorderGrip(name: name, position: index + 1, total: graph.settings.effects.count,
             canMoveEarlier: index > 0,
             canMoveLater: index < graph.settings.effects.count - 1,
             dragging: draggingID == effect.id,
             moveEarlier: { graph.move(effect.id, by: -1) },
             moveLater: { graph.move(effect.id, by: 1) })
             .draggable(payload) {
-                Label(name, systemImage: "slider.horizontal.3")
-                    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                HStack(spacing: 10) {
+                    EffectGripDots().frame(width: 28, height: 32)
+                    Text(String(format: "%02d", index + 1))
+                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).lineLimit(1)
+                        Text(statusText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Toggle("Enable \(name)", isOn: .constant(!effect.bypassed))
+                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    Text("Controls").padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                    Image(systemName: "xmark").frame(width: 32, height: 32)
+                }
+                    .padding(.vertical, 10)
+                    .frame(width: rowWidth)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator))
+                    .opacity(0.85)
+                    .allowsHitTesting(false)
             }
             .onDragSessionUpdated { session in
                 switch session.phase {
                 case .initial, .active: draggingID = effect.id
-                case .ended, .dataTransferCompleted: draggingID = nil
-                @unknown default: draggingID = nil
+                case .ended, .dataTransferCompleted:
+                    draggingID = nil
+                    clearDropTarget()
+                @unknown default:
+                    draggingID = nil
+                    clearDropTarget()
                 }
             }
     }
@@ -120,13 +177,31 @@ struct EffectRow: View {
         y < rowHeight / 2 ? .before : .after
     }
 
+    private func validOffset(edge: EffectDropEdge) -> Int? {
+        guard let draggingID else { return nil }
+        return EffectReordering.offset(ids: graph.settings.effects.map(\.id),
+            payload: EffectDragPayload(effectID: draggingID, sessionID: dragSessionID),
+            sessionID: dragSessionID, destinationID: effect.id, edge: edge)
+    }
+
+    private func clearDropTarget() {
+        dropTarget = nil
+        dropEdge = nil
+    }
+
     private func performDrop(_ item: EffectDragPayload, edge: EffectDropEdge) {
         let ids = graph.settings.effects.map(\.id)
         if let offset = EffectReordering.offset(ids: ids, payload: item, sessionID: dragSessionID,
-                                                destinationID: effect.id, edge: edge) {
+                                                destinationID: effect.id, edge: edge),
+           let sourceIndex = ids.firstIndex(of: item.effectID) {
+            let movedEffect = graph.settings.effects[sourceIndex]
+            let movedName = graph.plugins.first { $0.id == movedEffect.pluginID }?.name ?? "Effect"
             graph.move(item.effectID, by: offset)
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                userInfo: [.announcement: "\(movedName), position \(sourceIndex + offset + 1) of \(ids.count)",
+                           .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
-        dropEdge = nil
+        clearDropTarget()
         draggingID = nil
     }
 
@@ -136,16 +211,7 @@ struct EffectRow: View {
     }
 }
 
-private struct EffectReorderGrip: View {
-    let name: String
-    let position: Int
-    let canMoveEarlier: Bool
-    let canMoveLater: Bool
-    let dragging: Bool
-    let moveEarlier: () -> Void
-    let moveLater: () -> Void
-    @State private var hovered = false
-
+private struct EffectGripDots: View {
     var body: some View {
         VStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { _ in
@@ -155,37 +221,73 @@ private struct EffectReorderGrip: View {
                 }
             }
         }
-        .foregroundStyle(dragging ? Color.accentColor : .secondary)
+        .foregroundStyle(.secondary)
+    }
+}
+
+private struct EffectReorderGrip: View {
+    let name: String
+    let position: Int
+    let total: Int
+    let canMoveEarlier: Bool
+    let canMoveLater: Bool
+    let dragging: Bool
+    let moveEarlier: () -> Void
+    let moveLater: () -> Void
+    @State private var hovered = false
+    @GestureState private var pressed = false
+    @FocusState private var keyboardFocused: Bool
+    @AccessibilityFocusState private var voiceOverFocused: Bool
+
+    var body: some View {
+        EffectGripDots()
         .frame(width: 28, height: 32)
-        .background((dragging ? Color.accentColor : Color.secondary).opacity(dragging ? 0.18 : hovered ? 0.10 : 0),
+        .background(Color.secondary.opacity(pressed || dragging ? 0.22 : hovered ? 0.10 : 0),
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .updating($pressed) { _, pressed, _ in pressed = true })
         .focusable(true, interactions: .edit)
+        .focused($keyboardFocused)
         .onKeyPress(keys: [.upArrow, .downArrow]) { press in
             guard press.modifiers.contains(.option) else { return .ignored }
-            if press.key == .upArrow, canMoveEarlier { moveEarlier(); return .handled }
-            if press.key == .downArrow, canMoveLater { moveLater(); return .handled }
+            if press.key == .upArrow, canMoveEarlier { move(-1); return .handled }
+            if press.key == .downArrow, canMoveLater { move(1); return .handled }
             return .ignored
+        }
+        .contextMenu {
+            Button("Move Earlier") { move(-1) }.disabled(!canMoveEarlier)
+            Button("Move Later") { move(1) }.disabled(!canMoveLater)
         }
         .help("Drag to reorder \(name). When focused, press Option–Up or Option–Down.")
         .accessibilityElement()
         .accessibilityLabel("Reorder \(name)")
-        .accessibilityValue("Position \(position)")
+        .accessibilityValue("Position \(position) of \(total)")
+        .accessibilityFocused($voiceOverFocused)
         .accessibilityHint("Drag to a new position, or use the Move Earlier and Move Later actions.")
         .accessibilityAction(named: "Move \(name) earlier") {
-            if canMoveEarlier { moveEarlier() }
+            if canMoveEarlier { move(-1) }
         }
         .accessibilityAction(named: "Move \(name) later") {
-            if canMoveLater { moveLater() }
+            if canMoveLater { move(1) }
         }
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: if canMoveLater { moveLater() }
-            case .decrement: if canMoveEarlier { moveEarlier() }
+            case .increment: if canMoveLater { move(1) }
+            case .decrement: if canMoveEarlier { move(-1) }
             @unknown default: break
             }
         }
+    }
+
+    private func move(_ offset: Int) {
+        if offset < 0 { moveEarlier() } else { moveLater() }
+        keyboardFocused = true
+        voiceOverFocused = true
+        NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+            userInfo: [.announcement: "\(name), position \(position + offset) of \(total)",
+                       .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 }
 
