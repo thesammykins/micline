@@ -3,6 +3,7 @@ name: Validate release tooling
 on:
   pull_request:
     paths:
+      - ".github/gitleaks.toml"
       - ".github/workflows/**"
       - "scripts/**"
       - "Sources/**"
@@ -15,6 +16,7 @@ on:
       - "docs/**"
   push:
     paths:
+      - ".github/gitleaks.toml"
       - ".github/workflows/**"
       - "scripts/**"
       - "Sources/**"
