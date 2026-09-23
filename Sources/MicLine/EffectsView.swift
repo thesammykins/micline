@@ -160,6 +160,7 @@ struct EffectRow: View {
                     .opacity(0.85)
                     .allowsHitTesting(false)
             }
+            .dragConfiguration(DragConfiguration(allowMove: true))
             .onDragSessionUpdated { session in
                 switch session.phase {
                 case .initial, .active: draggingID = effect.id
