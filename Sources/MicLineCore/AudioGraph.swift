@@ -124,7 +124,7 @@ public final class AudioGraph: ObservableObject {
         guard plugin.hostable, settings.effects.count < 16 else { return }
         stop()
         settings.effects.append(EffectSelection(pluginID: plugin.id))
-        status = "Effect added. Start to load its controls."
+        status = "Effect added. Choose Controls to edit its settings."
         diagnostics.record(.effectAdded)
     }
 
