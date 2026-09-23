@@ -44,8 +44,12 @@ import Testing
     #expect(url.absoluteString.utf8.count < 2_000)
     #expect(url.host == "github.com")
     #expect(!url.absoluteString.contains("events"))
-    #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-        .first(where: { $0.name == "template" })?.value == "bug_report.yml")
+    #expect(url.path == "/thesammykins/micline/issues/new")
+    let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+    #expect(query.count == 2)
+    #expect(query.first(where: { $0.name == "template" })?.value == "bug_report.yml")
+    #expect(query.first(where: { $0.name == "environment" })?.value ==
+        "MicLine unavailable (12); macOS 27.0.1.\nSelected AU effects: 1.\nDiagnostic export: review locally, then attach manually if needed.")
 }
 
 @Test func diagnosticsRejectUntrustedVersionTextAndNonfiniteNumbers() throws {
