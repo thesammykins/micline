@@ -87,6 +87,7 @@ if ((SIGN_DMG)); then
 fi
 if ((NOTARIZE)); then
     ((SIGN_DMG)) || die "--notarize requires --sign-dmg"
+    command -v jq >/dev/null 2>&1 || die "jq is required with --notarize"
     [[ -n "${APPLE_NOTARY_KEYCHAIN_PROFILE:-}" ]] || \
         die "APPLE_NOTARY_KEYCHAIN_PROFILE is required with --notarize"
     [[ -z "${APPLE_NOTARY_KEY_ID:-}" && -z "${APPLE_NOTARY_ISSUER_ID:-}" && -z "${APPLE_NOTARY_KEY_PATH:-}" ]] || \
@@ -182,9 +183,16 @@ if ((SIGN_DMG)); then
 fi
 
 if ((NOTARIZE)); then
-    xcrun notarytool submit "$OUTPUT" \
+    rm -f "$OUTPUT.notary.json"
+    NOTARY_RESULT="$(xcrun notarytool submit "$OUTPUT" \
         --keychain-profile "$APPLE_NOTARY_KEYCHAIN_PROFILE" \
-        --wait
+        --wait --output-format json)"
+    NOTARY_ID="$(jq -r '.id // empty' <<< "$NOTARY_RESULT")"
+    [[ "$(jq -r '.status // empty' <<< "$NOTARY_RESULT")" == "Accepted" && -n "$NOTARY_ID" ]] || \
+        die "DMG notarization was not accepted (check notarytool history with the authorized profile)"
+    xcrun notarytool log "$NOTARY_ID" \
+        --keychain-profile "$APPLE_NOTARY_KEYCHAIN_PROFILE" \
+        "$OUTPUT.notary.json"
     xcrun stapler staple "$OUTPUT"
     xcrun stapler validate "$OUTPUT"
 fi

@@ -111,18 +111,46 @@ in the mounted image before release.
 For local notarization, the package script accepts only an existing `notarytool`
 Keychain profile. Creating or modifying that profile is a separate credential
 operation and is not part of release packaging. Once an authorized profile
-already exists, add `--notarize` and set its name without exposing credential
-values:
+already exists, first submit the signed app as a ZIP, inspect the Apple log,
+then staple the app before constructing the DMG. Use a private temporary
+directory and preserve symlinks:
 
 ```sh
-APPLE_NOTARY_KEYCHAIN_PROFILE='EXISTING_PROFILE_NAME' \
-./scripts/package-dmg.sh ... --sign-dmg --notarize
+STAGING_DIR='PRIVATE_TEMP_DIRECTORY_OUTSIDE_REPOSITORY'
+ditto -c -k --keepParent build/MicLine.app "$STAGING_DIR/MicLine.zip"
+xcrun notarytool submit "$STAGING_DIR/MicLine.zip" \
+  --keychain-profile micline-notary --wait --output-format json
+xcrun notarytool log 'SUBMISSION_UUID_FROM_ACCEPTED_RESULT' \
+  --keychain-profile micline-notary "$STAGING_DIR/app-notary-log.json"
+xcrun stapler staple build/MicLine.app
+xcrun stapler validate build/MicLine.app
+```
+
+Require `status: Accepted` and inspect `issues` in the log before stapling.
+Do not run the later steps on a rejected, pending, or timed-out submission.
+Then package the stapled app, notarize the signed DMG, and validate it:
+
+```sh
+APPLE_NOTARY_KEYCHAIN_PROFILE=micline-notary \
+MICLINE_SIGNING_CERTIFICATE_SHA1=86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E \
+./scripts/package-dmg.sh --app build/MicLine.app \
+  --output build/MicLine-0.1.0.dmg --volume-name 'MicLine 0.1.0' \
+  --sign-dmg --notarize
+xcrun stapler validate build/MicLine-0.1.0.dmg
+spctl --assess --type open --verbose=4 build/MicLine-0.1.0.dmg
 ```
 
 The script passes `--keychain-profile` to `notarytool --wait`, staples the
-accepted ticket, and validates the staple. It rejects file-based notary
+accepted ticket, and validates the staple. It requires `jq`, checks the JSON
+status is `Accepted`, and writes the Apple log next to the output DMG as
+`MicLine-0.1.0.dmg.notary.json` (local ignored evidence; do not upload it to an
+Actions artifact). It rejects file-based notary
 credentials. A profile's presence is not proof that Apple will accept a future
 submission; validate it only during an explicitly authorized notarization.
+Inspect the logged issues even on an accepted result. Mount the final DMG,
+verify the nested app's signature, staple, Gatekeeper result, and Finder layout,
+then copy to a disposable test install location and launch only when the
+functional app owner has approved the test (microphone permissions may prompt).
 
 ## GitHub Actions configuration
 
@@ -144,18 +172,42 @@ visibility changes require separate authorization. Before adding any certificate
 or notary credential, obtain an enforceable independent reviewer gate and verify
 its behavior with a credential-free deployment test. If that is impossible on the
 current plan, stop; do not fall back to repository secrets or use the unreviewed
-environment as a substitute. No environment secrets or variables are configured.
+environment as a substitute. As of September 23, 2026, GitHub reports no
+environment secrets or repository variables configured. No signed Actions run is
+authorized. A private personal repository on Free/Pro cannot enforce required
+reviewers; move to a plan/ownership arrangement that genuinely supports this
+gate, or keep all signing and notarization local. Do not infer approval from a
+manual dispatch confirmation or a writable enable variable. See GitHub's
+[environment protection availability](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
 
-The only currently visible ASC CLI profile is `RosterEase`; its permission to
-perform MicLine work is unverified. Do not select its default context until the
-account holder confirms MicLine authorization or provides a dedicated login.
-Once authorized, create a new MicLine-only Developer ID certificate and its CSR
-using secure, locally controlled private-key handling. The CLI supports
-`--generate-csr --key-out`; a new MicLine-specific private-key file is permitted
-under the approved secure file-secret workflow, but must never enter source,
-logs, messages, or artifacts. Confirm the certificate's nonsecret
-serial/team/expiry/fingerprint, then select that exact fingerprint for signing.
-Do not revoke, rotate, export, or reuse any other product's identity.
+The dedicated MicLine Developer ID Application identity is installed in the
+login Keychain. Its SHA-1 is `86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E`,
+SHA-256 is `11541614501843E409C0DCC355D6683202119BAB6649F5BEBDED7835AC0C5C4B`,
+team is `7GF6N5U8ZH`, serial is `72949BB546E861B960B4A124A62AE1BF`, and
+expiry is September 17, 2031. `security verify-cert -p codeSign` validated its
+Developer ID → Apple Root chain, and `security find-identity` found its paired
+signing identity. Another Developer ID identity has the same common name; never
+select by name. Do not revoke, rotate, export, or reuse other products' identities.
+
+The only visible `asc` profile is `RosterEase`; never use its default context
+for MicLine. A new local `notarytool` Keychain profile named `micline-notary`
+is needed. Prefer a new MicLine-labelled Apple app-specific password entered
+in a secure local interactive terminal:
+
+```sh
+xcrun notarytool store-credentials micline-notary \
+  --apple-id '<Apple ID>' --team-id 7GF6N5U8ZH
+```
+
+Omit `--password`
+so the tool prompts securely and validates before saving. Apple explicitly says
+individual ASC API keys cannot use notarytool. A dedicated Team API key is an
+alternative for protected hosted automation, but even a role-restricted team key
+can access every app on that team. Test the minimum permitted role with a new
+key; do not assume `Developer` is sufficient, nor reuse the RosterEase key.
+Never paste either credential into chat, source, logs, or command arguments. See
+Apple's [API key limitations](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api)
+and [notarytool workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 Repository privacy is not a release security boundary. Pull-request jobs must
 remain credential-free, and signed jobs must remain manual, `main`-only,
@@ -168,6 +220,7 @@ chat or source:
 | --- | --- |
 | `MACOS_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID certificate and private key in PKCS#12 format |
 | `MACOS_CERTIFICATE_PASSWORD` | PKCS#12 export password |
+| `APPLE_NOTARY_KEY_P8_BASE64` | Base64 of a NEW MicLine-labelled Team API private key; hosted notarization only |
 
 Set environment variable `MICLINE_SIGNING_CERTIFICATE_SHA1` to the nonsecret
 40-character fingerprint of the dedicated MicLine certificate. A common name
@@ -180,7 +233,14 @@ Add public environment variables `MICLINE_SPARKLE_FEED_URL` and
 public update metadata, and distribution origin have been reviewed. Leaving it
 unset makes the manually dispatched job fail explicitly before loading signing
 credentials. The workflow validates the host, SDK, version, architecture, and
-public Sparkle metadata before the certificate is loaded.
+public Sparkle metadata before the certificate is loaded. The environment
+variables `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID` identify the
+dedicated Team key; `MICLINE_ENABLE_HOSTED_NOTARIZATION=true` is a separate
+environment gate. `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES=true` allows the
+temporary import path. All three enable flags remain unset for now. No Sparkle
+private key is placed in Actions: appcast signing remains a local Keychain step
+after the signed and stapled DMG has been retrieved through separately approved
+access-controlled storage.
 
 The prepared hosted workflow decodes a PKCS#12 identity into a temporary file
 because `security import` consumes a path. Sammy authorized secure masked/file-
@@ -190,38 +250,47 @@ prompts, and artifacts. The temporary file must be created only on the ephemeral
 hosted runner after environment protection is independently verified, restricted
 to the job, and deleted by unconditional cleanup. The random ephemeral-Keychain
 password remains only in step memory. `MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES`
-and `MICLINE_ENABLE_SIGNED_RELEASE` must remain unset until the new certificate,
-independent approval gate, and credential import have been verified; neither
+and `MICLINE_ENABLE_SIGNED_RELEASE` must remain unset until the dedicated certificate's
+PKCS#12 import, independent approval gate, and credential handling have been verified; neither
 variable by itself is authorization to sign or publish.
 
-Hosted notarization is also disabled. A fresh GitHub-hosted runner has no
-pre-provisioned `notarytool` Keychain profile, and no MicLine-authorized profile
-or secure provisioning procedure has been established. Selecting the `notarize`
-input fails before credential loading. The new file-secret authority permits
-designing such a procedure, but does not make an unrelated default ASC profile
-usable. Keep this stop until a MicLine-specific profile and protected credential
-mechanism are tested; do not silently substitute a Trellis/RosterEase key.
+Hosted notarization remains disabled. A future protected runner provisions a
+`micline-ci` profile in its temporary signing Keychain from a dedicated Team
+key, validates it with Apple, deletes the temporary `.p8`, notarizes a ZIP of
+the app, staples the app before packaging, then notarizes and staples the DMG.
+It mounts the final DMG read-only and checks the embedded app's signature,
+staple, Applications alias, and Gatekeeper assessment. This is not an
+interactive install/launch test. Both submission logs remain local to the
+ephemeral runner. This path has not been exercised; do not enable it until the
+reviewer gate, dedicated key, certificate import, and local notarization path
+have been verified. The temporary Team key is not the local app-specific-password
+profile.
 
-To build an artifact, manually dispatch **Build signed release artifact**, enter
-the version and integer build number, leave notarization disabled, and type
-`SIGN_ARTIFACT_ONLY`. The job:
+After the independent gate is enforceable and explicitly approved, dispatch
+**Build signed release artifact** on `main`, enter the accepted exact 40-character
+`source_sha`, version, integer build number, and `SIGN_ARTIFACT_ONLY`. The job
+rejects a SHA that differs from `github.sha` at dispatch and verifies checkout
+before credential access. Leave notarization disabled until its separate gate
+has been validated. The job:
 
 1. verifies macOS and SDK 27 before loading credentials;
-2. imports the certificate into an ephemeral keychain;
-3. builds the hardened, timestamped app and branded DMG;
-4. computes the DMG SHA-256 without uploading or retaining either file; and
-5. removes the certificate file and ephemeral keychain in an unconditional
+2. tests the exact checked-out source and pinned Sparkle fixture without credentials;
+3. imports the certificate into an ephemeral keychain;
+4. builds the hardened, timestamped app and branded DMG;
+5. computes the DMG SHA-256 without uploading or retaining either file; and
+6. removes the certificate file and ephemeral keychain in an unconditional
    cleanup step.
 
 The workflow has only `contents: read` permission. Creating tags, GitHub Releases,
 or public downloads remains a separate human-authorized action.
 
-The signed workflow is intentionally untested until the dedicated MicLine identity,
-required secrets, and enforceably protected environment exist.
-A local Developer ID identity being present does not prove CI import or
-timestamping. Hosted notarization remains disabled; local notarization requires
-an existing authorized `notarytool` Keychain profile and explicit submission
-authorization.
+The signed workflow is intentionally untested until required secrets and an
+enforceably protected environment exist. A local Developer ID identity being
+present does not prove CI import or timestamping. No DMG is uploaded as an
+Actions artifact, including on private repository runs: past artifacts can be
+exposed after a later visibility change. A checksum printed in ephemeral CI is
+not a retrievable release artifact. Arrange approved access-controlled storage
+and verify the final bytes before treating hosted output as distributable.
 
 ## Sparkle update boundary
 
@@ -255,9 +324,17 @@ Developer ID build. If a real plugin fails because of library validation, stop
 and review the narrowest entitlement change and its security tradeoff rather
 than weakening the release globally.
 
-A private GitHub repository is not a usable public Sparkle feed. Choose a public
-HTTPS signed feed/artifact origin or a dedicated authenticated distribution
-service. Never embed a GitHub token or other feed credential in the app. Follow
+A private GitHub repository is not a usable public Sparkle feed. Reserve
+`https://thesammykins.github.io/micline/updates/appcast.xml` for the eventual
+public project Pages site of this repository, and use public immutable GitHub
+Release asset URLs from the same repository for enclosure downloads only after
+publication is separately approved. A Pages site is public even when its source
+repository is private, so Pages deployment must remain disabled now. Do not use
+`raw.githubusercontent.com` on a private branch as a feed or embed a GitHub
+token in the app. Until the feed and downloads exist, the production updater
+cannot deliver an update; its signed-feed and archive verification still fail
+closed. An alternate public feed repository requires a deliberate feed URL
+decision before building the first public artifact. Follow
 Sparkle's official [security guidance](https://sparkle-project.org/documentation/security-and-reliability/),
 [programmatic setup](https://sparkle-project.org/documentation/programmatic-setup/),
 and [sandboxing/XPC guidance](https://sparkle-project.org/documentation/sandboxing/).
@@ -368,15 +445,22 @@ for the 2.10 tool behavior used here.
 ## Release threat model
 
 - **Credential theft:** certificate, PKCS#12 password, Notary Keychain profile,
-  App Store Connect key, and
-  Sparkle private key can authorize malicious releases. Keep them out of PR jobs,
-  logs, source, artifacts, and prompts. The hosted signing path is additionally
-  blocked because the new MicLine identity and an enforceable independent
-  environment approval gate do not yet exist. Hosted notarization remains blocked
-  because no authorized MicLine profile/provisioning path exists.
+  App Store Connect key, and Sparkle private key can authorize malicious releases.
+  Keep them out of PR jobs, logs, source, artifacts, and chat. The dedicated
+  identity exists locally, but the hosted signing path remains blocked by the
+  missing independent reviewer gate and credential import validation. Hosted
+  notarization additionally requires a separate dedicated Team API key and
+  validation. Neither the RosterEase profile nor any Trellis material is a fallback.
 - **Untrusted workflow changes:** pull requests receive no signing secrets. The
-  credentialed workflow is manual, main-only, explicitly enabled, confirmation
-  gated, and artifact-only. Review workflow changes before enabling it.
+  credentialed workflow is manual, main-only, exact-SHA pinned, explicitly
+  enabled, confirmation gated, and does not upload artifacts. These checks do
+  not substitute for enforceable independent environment approval. Review
+  workflow changes and verify the approval gate before enabling any secrets.
+- **Residuals on runners:** PKCS#12 and Team API key are ephemeral files with
+  restricted permissions; the temporary Keychain and file paths are removed on
+  `always()`. Secret environment variables remain in step memory while used.
+  Logs are not uploaded, and hosted runner disposal is still necessary. On a
+  failed or cancelled job, verify no credential artifact was uploaded.
 - **Feed or transport compromise:** HTTPS protects transport; Sparkle's Ed25519
   signature protects artifact authenticity if its private key is kept separate.
   Missing or malformed feed/key metadata disables the updater.

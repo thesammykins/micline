@@ -11,6 +11,10 @@ on:
         description: Integer CFBundleVersion
         required: true
         type: string
+      source_sha:
+        description: Accepted 40-character commit SHA at the dispatch main ref
+        required: true
+        type: string
       notarize:
         description: Submit to Apple, wait, and staple the DMG
         required: true
@@ -28,11 +32,29 @@ jobs:
   signed-artifact:
     if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'SIGN_ARTIFACT_ONLY' }}
     runs-on: xcode-27
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: release-signing
     steps:
+      - name: Pin reviewed source before checkout
+        env:
+          ACCEPTED_SHA: ${{ inputs.source_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          [[ "$ACCEPTED_SHA" =~ ^[[:xdigit:]]{40}$ && "$ACCEPTED_SHA" == "$DISPATCH_SHA" ]] || {
+            echo "source_sha must equal the exact main commit at dispatch" >&2
+            exit 1
+          }
+
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Verify checked-out source
+        env:
+          ACCEPTED_SHA: ${{ inputs.source_sha }}
+        run: test "$(git rev-parse HEAD)" = "$ACCEPTED_SHA"
 
       - name: Verify macOS and SDK requirement before loading credentials
         run: |
@@ -40,12 +62,19 @@ jobs:
           [[ "$(xcodebuild -version | awk 'NR == 1 { print $2 }' | cut -d. -f1)" -ge 27 ]]
           ./scripts/build.sh --check-environment
 
+      - name: Test reviewed source and pinned Sparkle signing format
+        run: |
+          swift test --parallel
+          swift build --product MicLine -c release
+          ./scripts/verify-sparkle-fixture.sh
+
       - name: Validate requested version values
         env:
           MICLINE_VERSION: ${{ inputs.version }}
           MICLINE_BUILD_NUMBER: ${{ inputs.build_number }}
           MICLINE_ENABLE_SIGNED_RELEASE: ${{ vars.MICLINE_ENABLE_SIGNED_RELEASE }}
           MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES: ${{ vars.MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES }}
+          MICLINE_ENABLE_HOSTED_NOTARIZATION: ${{ vars.MICLINE_ENABLE_HOSTED_NOTARIZATION }}
           MICLINE_NOTARIZE_REQUESTED: ${{ inputs.notarize }}
           MICLINE_SPARKLE_FEED_URL: ${{ vars.MICLINE_SPARKLE_FEED_URL }}
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
@@ -61,15 +90,21 @@ jobs:
             echo "MICLINE_SIGNING_CERTIFICATE_SHA1 must pin the new MicLine Developer ID certificate" >&2
             exit 1
           }
+          [[ "$MICLINE_SIGNING_CERTIFICATE_SHA1" == "86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E" ]] || {
+            echo "Only the reviewed MicLine Developer ID fingerprint is allowed" >&2
+            exit 1
+          }
           : "${MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES:?credential-file handling is not approved}"
           [[ "$MICLINE_ALLOW_EPHEMERAL_CREDENTIAL_FILES" == "true" ]] || {
             echo "Signed CI remains blocked: security import requires a temporary PKCS#12 file" >&2
             exit 1
           }
-          [[ "$MICLINE_NOTARIZE_REQUESTED" != "true" ]] || {
-            echo "Hosted notarization remains blocked: MicLine notary credential provisioning is not configured" >&2
-            exit 1
-          }
+          if [[ "$MICLINE_NOTARIZE_REQUESTED" == "true" ]]; then
+            [[ "$MICLINE_ENABLE_HOSTED_NOTARIZATION" == "true" ]] || {
+              echo "Hosted notarization requires a separately approved credential gate" >&2
+              exit 1
+            }
+          fi
 
       - name: Import Developer ID certificate into an ephemeral keychain
         env:
@@ -108,6 +143,13 @@ jobs:
             echo "The imported release keychain must contain only the pinned MicLine Developer ID identity" >&2
             exit 1
           }
+          security find-certificate -c 'Developer ID Application: Samantha Myers (7GF6N5U8ZH)' -p "$KEYCHAIN_PATH" \
+            | openssl x509 -noout -subject -fingerprint -sha256 \
+            | tr -d ':' \
+            | grep -F '11541614501843E409C0DCC355D6683202119BAB6649F5BEBDED7835AC0C5C4B' >/dev/null || {
+              echo "Imported certificate SHA-256 or team differs from reviewed MicLine identity" >&2
+              exit 1
+            }
 
       - name: Build hardened Developer ID app
         env:
@@ -120,6 +162,41 @@ jobs:
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
         run: ./scripts/build.sh
 
+      - name: Provision isolated notarization profile
+        if: ${{ inputs.notarize }}
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          : "${NOTARY_KEY_P8_BASE64:?dedicated notarization API key is required}"
+          : "${NOTARY_KEY_ID:?dedicated notarization key ID is required}"
+          : "${NOTARY_ISSUER_ID:?team issuer ID is required}"
+          umask 077
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/micline-notary.p8"
+          xcrun notarytool store-credentials micline-ci \
+            --key "$RUNNER_TEMP/micline-notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --keychain "$RUNNER_TEMP/micline-signing.keychain-db" \
+            --validate
+          rm -f "$RUNNER_TEMP/micline-notary.p8"
+
+      - name: Notarize and staple app before packaging
+        if: ${{ inputs.notarize }}
+        run: |
+          ditto -c -k --keepParent build/MicLine.app "$RUNNER_TEMP/MicLine.zip"
+          result="$(xcrun notarytool submit "$RUNNER_TEMP/MicLine.zip" \
+            --keychain "$RUNNER_TEMP/micline-signing.keychain-db" \
+            --keychain-profile micline-ci --wait --timeout 45m --output-format json)"
+          id="$(jq -r '.id // empty' <<< "$result")"
+          [[ "$(jq -r '.status // empty' <<< "$result")" == "Accepted" && -n "$id" ]]
+          xcrun notarytool log "$id" --keychain "$RUNNER_TEMP/micline-signing.keychain-db" \
+            --keychain-profile micline-ci "$RUNNER_TEMP/micline-app-notary.json"
+          xcrun stapler staple build/MicLine.app
+          xcrun stapler validate build/MicLine.app
+          rm -f "$RUNNER_TEMP/MicLine.zip"
+
       - name: Package signed artifact
         env:
           MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
@@ -131,6 +208,31 @@ jobs:
             --volume-name "MicLine $RELEASE_VERSION" \
             --sign-dmg
 
+      - name: Notarize and staple DMG
+        if: ${{ inputs.notarize }}
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          dmg="build/MicLine-$RELEASE_VERSION.dmg"
+          result="$(xcrun notarytool submit "$dmg" \
+            --keychain "$RUNNER_TEMP/micline-signing.keychain-db" \
+            --keychain-profile micline-ci --wait --timeout 45m --output-format json)"
+          id="$(jq -r '.id // empty' <<< "$result")"
+          [[ "$(jq -r '.status // empty' <<< "$result")" == "Accepted" && -n "$id" ]]
+          xcrun notarytool log "$id" --keychain "$RUNNER_TEMP/micline-signing.keychain-db" \
+            --keychain-profile micline-ci "$RUNNER_TEMP/micline-dmg-notary.json"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --verbose=4 "$dmg"
+          mount="$RUNNER_TEMP/micline-verify"
+          mkdir -p "$mount"
+          trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg" >/dev/null
+          test -L "$mount/Applications"
+          codesign --verify --deep --strict --verbose=2 "$mount/MicLine.app"
+          xcrun stapler validate "$mount/MicLine.app"
+          spctl --assess --type execute --verbose=4 "$mount/MicLine.app"
+
       - name: Create artifact checksum
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -141,4 +243,4 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/micline-signing.keychain-db"
           security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-          rm -f "$RUNNER_TEMP/micline-signing.p12"
+          rm -f "$RUNNER_TEMP/micline-signing.p12" "$RUNNER_TEMP/micline-notary.p8" "$RUNNER_TEMP/MicLine.zip"
