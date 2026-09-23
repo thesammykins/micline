@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 import MicLineUI
 
 @Suite("Effect reordering")
@@ -59,6 +60,18 @@ struct EffectReorderingTests {
         let original = payload(third)
         let decoded = try JSONDecoder().decode(EffectDragPayload.self, from: JSONEncoder().encode(original))
         #expect(decoded == original)
+    }
+
+    @Test("App declares the drag payload type as data")
+    func payloadContentType() throws {
+        // SwiftPM's test host does not load the application's type declarations.
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist"))
+        let plist = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let exports = try #require(plist["UTExportedTypeDeclarations"] as? [[String: Any]])
+        let declaration = try #require(exports.first { $0["UTTypeIdentifier"] as? String == UTType.micLineEffect.identifier })
+        #expect((declaration["UTTypeConformsTo"] as? [String])?.contains("public.data") == true)
     }
 
     private func payload(_ effect: UUID) -> EffectDragPayload {

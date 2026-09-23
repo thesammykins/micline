@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 public extension UTType {
-    static let micLineEffect = UTType(exportedAs: "com.sammy.micline.effect")
+    static let micLineEffect = UTType(exportedAs: "com.sammy.micline.effect", conformingTo: .data)
 }
 
 public enum EffectDropEdge: String, Codable, Sendable {
