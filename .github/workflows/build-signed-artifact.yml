@@ -32,7 +32,8 @@ jobs:
   signed-artifact:
     if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'SIGN_ARTIFACT_ONLY' }}
     runs-on: xcode-27
-    timeout-minutes: 90
+    # Two 45-minute Apple waits plus build, packaging, verification, and cleanup.
+    timeout-minutes: 150
     environment: release-signing
     steps:
       - name: Pin reviewed source before checkout
