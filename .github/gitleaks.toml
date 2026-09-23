@@ -8,3 +8,11 @@ targetRules = ["generic-api-key"]
 paths = ['''^scripts/verify-sparkle-fixture\.sh$''']
 regexTarget = "match"
 regexes = ['''PUBLIC_TEST_KEY='11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHUR[o]='''']
+
+[[allowlists]]
+description = "MicLine Sparkle public Ed25519 key in the release instructions"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^docs/RELEASING\.md$''']
+regexTarget = "match"
+regexes = ['''MICLINE_SPARKLE_PUBLIC_ED_KEY='FOJmOcZaeXTrpsrD\+4J6ZG7vWQJyHs55aWrqALlRLcY='''']
