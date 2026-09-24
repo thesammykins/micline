@@ -200,6 +200,13 @@ fi
 ditto "${BIN_PATHS[0]}/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 install -m 0644 "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 install -m 0644 "$ROOT/Resources/Sparkle-LICENSE.txt" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+# Bundle the notes for this exact version; About must work offline and must not
+# accidentally show notes for a newer release from the web.
+if [[ -n "$VERSION" && -f "$ROOT/docs/releases/$VERSION.md" ]]; then
+    install -m 0644 "$ROOT/docs/releases/$VERSION.md" "$APP/Contents/Resources/ReleaseNotes.md"
+elif [[ "$SIGNING_MODE" == "developer-id" ]]; then
+    die "Release notes are required at docs/releases/$VERSION.md"
+fi
 if [[ -d "$ROOT/Resources/SetupLessons" ]]; then
     ditto "$ROOT/Resources/SetupLessons" "$APP/Contents/Resources/SetupLessons"
 fi

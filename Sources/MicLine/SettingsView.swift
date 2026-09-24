@@ -190,13 +190,13 @@ struct AboutSettingsView: View {
     @ObservedObject var updater: MicLineUpdater
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             if let image = NSApp.applicationIconImage {
-                Image(nsImage: image).resizable().frame(width: 96, height: 96)
+                Image(nsImage: image).resizable().frame(width: 64, height: 64)
             } else {
-                Image(systemName: "mic.badge.plus").font(.system(size: 64)).frame(width: 96, height: 96)
+                Image(systemName: "mic.badge.plus").font(.system(size: 64)).frame(width: 64, height: 64)
             }
-            Text("MicLine").font(.largeTitle.bold())
+            Text("MicLine").font(.title2.bold())
             Text("Version \(version) (\(build))").foregroundStyle(.secondary)
             GroupBox("Privacy") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -207,16 +207,35 @@ struct AboutSettingsView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             }
-            GroupBox("Updates") {
-                HStack {
-                    Text(updater.availability == .ready ? "Signed updates are available through MicLine's public release feed." : "Updates are unavailable in this build. Local development builds do not use the public update feed.")
-                    Spacer()
-                }.padding(8)
+            GroupBox("What’s new in \(version)") {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(releaseNotes.enumerated()), id: \.offset) { _, paragraph in
+                            if paragraph.hasPrefix("# ") {
+                                EmptyView()
+                            } else if paragraph.hasPrefix("## ") {
+                                Text(String(paragraph.dropFirst(3))).font(.headline)
+                            } else {
+                                Text(.init(paragraph)).font(.callout)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                }.frame(minHeight: 140)
             }
-            Spacer()
             Text("Copyright 2026 Sammykins").foregroundStyle(.secondary)
         }
         .padding(28)
+    }
+
+    private var releaseNotes: [String] {
+        guard let url = Bundle.main.url(forResource: "ReleaseNotes", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return ["Release notes are unavailable for this development build."]
+        }
+        return text.components(separatedBy: "\n\n")
+            .flatMap { $0.hasPrefix("- ") ? $0.components(separatedBy: "\n") : [$0] }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development" }
