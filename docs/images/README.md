@@ -1,8 +1,10 @@
 # Product screenshots
 
-`micline-processing.png` is Samantha's native MicLine 1.1.0 screenshot,
-supplied on 24 September 2026 and used unchanged. It shows the gain dial,
-icon actions, live meters and a configured effect, without recording overlays.
+`micline-processing.png` is an animated PNG made from Samantha's two native
+MicLine 1.1.0 screenshots supplied on 24 September 2026. It holds each gain
+control view for roughly four seconds and crossfades between dial and slider.
+This is a presentation transition between screenshots, not a recording of the
+app's animation. The first frame remains a useful static fallback.
 
 `guided-setup.jpg` was captured from the running native app on macOS 27 on
 24 September 2026 using the 1.0.0 UI source and a development-signed local build.
