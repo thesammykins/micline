@@ -190,3 +190,20 @@ code review found no blocking cancellation or route-safety defect.
 The GPT-6 Luna max sweep found no other confirmed onboarding/effect-control
 defect. Its hypothesis that Settings-scoped updater construction might delay
 automatic checks needs runtime confirmation and is not part of this patch.
+
+## 1.0.1 published update acceptance
+
+GitHub Actions run `35961609085` passed tests, app and DMG notarization (no
+logged issues), signing, release publication and Pages deployment for `01058ab`.
+An installed public 1.0.0 displayed the new inline release notes and completed
+Install Update → Install and Relaunch. The installed bundle reports 1.0.1,
+build 1000001; strict codesign verification and Gatekeeper acceptance passed.
+Sparkle logged successful appcast and update EdDSA verification. Its stale
+bookmark warning did not prevent installation.
+
+The final installed build captured fifine input 1 without output or recording,
+then stopped after five seconds and retained a −13.7 dBFS peak. Processing was
+left stopped and existing route, gain and startup preferences were preserved.
+The feed publishes a 102,710-byte signed delta with a full archive fallback;
+the available runtime logs do not prove which download the installed update used.
+No local private release credentials were used for this acceptance test.

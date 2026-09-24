@@ -24,7 +24,19 @@ and Pages allowing only main. Those are corrected. The failed unpublished tag
 was moved once; published assets have not been replaced. Both release-signing
 and github-pages permit v* tags. No existing Apple credential was revoked.
 
-Next acceptance exercise: install 1.0.0 and update to a genuine 1.0.1 patch through
-Sparkle. The first release intentionally has no delta predecessor.
+Released **1.0.1**, source `01058ab`, through [GitHub Actions](https://github.com/thesammykins/micline/actions/runs/35961609085).
+The installed 1.0.0 displayed the release notes, downloaded and verified the update,
+and installed/relaunched as 1.0.1 (1000001). Strict signature and Gatekeeper checks
+passed on `/Applications/MicLine.app`. Its five-second input-only check completed.
+
+The published feed includes the signed 102,710-byte delta and 4,219,043-byte full
+DMG. The hosted feed matches the release asset; the downloaded DMG checksum
+matches. The installed update succeeded, but the retained runtime logs do not
+identify whether it used the delta or full download.
+
+Routine publication runs entirely in Actions using GitHub environment secrets.
+The publisher refuses local execution and explicitly passes the Sparkle secret
+through stdin, without a Keychain fallback. Local development and installed
+update checks require no private release credentials.
 
 See [release procedure](RELEASING.md) for secret names and retry behavior.

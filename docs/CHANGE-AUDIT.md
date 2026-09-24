@@ -143,3 +143,10 @@ verified local working copy and preserving the sparkle prefix resolves it. The
 two-release fixture now includes our first-feed serialization step. Publishing
 is explicitly restricted to Actions with GH_TOKEN and SPARKLE_PRIVATE_KEY; no
 local Keychain fallback exists.
+
+
+Final acceptance documentation updates `docs/RELEASE-SETUP.md` and
+`docs/RESULTS.md`: successful hosted 1.0.1 release, real installed 1.0.0 upgrade,
+final-build microphone check and the limit of delta transport evidence. This
+section records the audit in `docs/CHANGE-AUDIT.md`. No additional app changes
+or release credential changes accompany these documentation updates.
