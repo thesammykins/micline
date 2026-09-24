@@ -97,10 +97,15 @@ struct MeasurementView: View {
             }
         }.padding(28).frame(width: 580)
             .fixedSize(horizontal: false, vertical: true)
-            .onAppear { selectMatchingConsumerIfNeeded() }
+            .onAppear { graph.suspendAutomaticProcessing(); selectMatchingConsumerIfNeeded() }
             .onChange(of: graph.settings.outputUID) { _, _ in selectMatchingConsumerIfNeeded() }
             .onChange(of: graph.inputs) { _, _ in selectMatchingConsumerIfNeeded() }
-            .onDisappear { task?.cancel() }
+            .onDisappear {
+                let finishing = task
+                finishing?.cancel()
+                graph.stop()
+                Task { await finishing?.value; graph.restoreAutomaticProcessing() }
+            }
     }
 
     private var matchingConsumers: [AudioDevice] {

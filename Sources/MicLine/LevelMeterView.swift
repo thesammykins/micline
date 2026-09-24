@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MicLineCore
 
@@ -51,7 +52,7 @@ struct LevelMeterView: View {
                     .mask(alignment: .leading) {
                         Capsule().frame(width: proxy.size.width * position(reading.rmsDBFS))
                     }
-                    marker(at: reading.samplePeakDBFS, width: 2, color: .white, proxy: proxy)
+                    marker(at: reading.samplePeakDBFS, width: 2, color: .primary, proxy: proxy)
                     marker(at: reading.heldSamplePeakDBFS, width: 2, color: meterColor, proxy: proxy)
                 }
                 .clipShape(Capsule())
@@ -131,7 +132,6 @@ struct MeterPanel: View {
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -162,5 +162,45 @@ struct MenuOutputMeter: View {
         LevelMeterView(title: "Output", reading: display.readings.output, compact: true)
             .padding(12)
             .background(.background, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct MenuBarMeterLabel: View {
+    @ObservedObject var display: MeterDisplay
+    let running: Bool
+    @AppStorage("colourMenuMeter") private var colour = true
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Image(nsImage: statusImage)
+            .accessibilityLabel("MicLine")
+            .accessibilityValue(running
+                ? "Processing, output RMS \(Int(display.readings.output.rmsDBFS)) decibels full scale"
+                : "Stopped")
+            .help(running ? "MicLine · Processing · Output level" : "MicLine · Stopped")
+    }
+
+    private var statusImage: NSImage {
+        let level = running ? display.readings.output.rmsDBFS : -90
+        let symbol = running ? "mic.fill" : "mic.slash"
+        let foreground: NSColor = colour ? (colorScheme == .dark ? .white : .black) : .black
+        let coloured = colour
+        let image = NSImage(size: NSSize(width: 52, height: 18), flipped: false) { _ in
+            if let mic = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(paletteColors: [foreground])) {
+                mic.draw(in: NSRect(x: 0, y: 1, width: 13, height: 16))
+            }
+            let thresholds: [Double] = [-60, -48, -36, -24, -18, -12, -9, -3]
+            for (index, threshold) in thresholds.enumerated() {
+                let lit = level > -90 && level >= threshold
+                let zone: NSColor = threshold >= -9 ? .systemRed : threshold >= -18 ? .systemOrange : .systemGreen
+                (lit ? (coloured ? zone : foreground) : foreground.withAlphaComponent(0.24)).setFill()
+                NSBezierPath(roundedRect: NSRect(x: 18 + CGFloat(index) * 4,
+                    y: 4, width: 2.5, height: 10), xRadius: 1.25, yRadius: 1.25).fill()
+            }
+            return true
+        }
+        image.isTemplate = !colour
+        return image
     }
 }

@@ -33,6 +33,7 @@ struct OnboardingView: View {
     @Binding var completedSetup: Bool
     var height: CGFloat = 520
     @AppStorage("soundCheckCheckpoint") private var checkpoint = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step: Step = .welcome
     @State private var ownsSetup = false
     @State private var permission = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -48,7 +49,8 @@ struct OnboardingView: View {
             HStack {
                 Text(step.chapter).font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Button { help.toggle() } label: { Label("Watch Guide", systemImage: "play.rectangle") }
+                Button { help.toggle() } label: { Image(systemName: "play.rectangle") }
+                    .help("Watch the guide for this step").accessibilityLabel("Watch guide")
                     .sheet(isPresented: $help) {
                         SetupLessonView(lesson: lesson)
                     }
@@ -68,6 +70,8 @@ struct OnboardingView: View {
                     }
                     if let message { Text(message).font(.callout).foregroundStyle(.orange) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
+                    .id(step).transition(.opacity)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: step)
             }
             Divider()
             HStack {
@@ -144,7 +148,7 @@ struct OnboardingView: View {
             if let plugin = effect.plugin(in: graph.plugins) {
                 if graph.settings.effects.contains(where: { $0.pluginID == plugin.id }) {
                     Label("Already in your chain", systemImage: "checkmark.circle")
-                    Text("Use Controls in the main window to adjust it. Setup won't add a second copy.").font(.callout).foregroundStyle(.secondary)
+                    Text("Use the sliders button in the main window to adjust it. Setup won't add a second copy.").font(.callout).foregroundStyle(.secondary)
                 } else {
                     Button("Try \(effect.title)...") { trial = effect }.buttonStyle(.borderedProminent)
                 }
@@ -183,7 +187,7 @@ struct OnboardingView: View {
                 SetupLessonMovie(lesson: .ready).frame(height: 220)
             }
             Label("You confirmed reception in your app.", systemImage: "checkmark.circle")
-            Text("Your settings are saved and the check is stopped. Start processing from MicLine when you want to use this sound.")
+            Text("Your settings are saved. When you finish, MicLine starts your virtual route and keeps it processing in the background unless microphone access is paused.")
             Text("Repeat setup from Settings → Audio Setup. Automatic processing and login launch remain separate choices.")
                 .font(.callout).foregroundStyle(.secondary)
         }

@@ -47,6 +47,42 @@ import AVFoundation
     #expect(migrated.inputChannel == nil && migrated.outputChannel == nil)
     #expect(restored == settings)
     #expect(restored.effects.map(\.pluginID) == ["first", "second"])
+    #expect(migrated.gainRange == -24...12)
+    settings.gainDB = -12
+    settings.minimumGainDB = -6
+    settings.maximumGainDB = .nan
+    settings.validate()
+    #expect(settings.gainDB == -12)
+    #expect(settings.gainRange == -12...12)
+    settings.gainDB = 0
+    settings.minimumGainDB = 0
+    settings.maximumGainDB = 0
+    settings.validate()
+    #expect(settings.gainRange.lowerBound < settings.gainRange.upperBound)
+}
+
+@Test @MainActor func privacyPauseSurvivesSetupAndAutomaticStartup() {
+    let suite = "micline.intent-test.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(true, forKey: "completedSetup")
+    let graph = AudioGraph(defaults: defaults)
+    graph.enableAutomaticProcessing()
+    #expect(graph.wantsProcessing)
+    #expect(graph.beginSetup())
+    graph.endSetup()
+    #expect(graph.wantsProcessing)
+    graph.pauseProcessing()
+    #expect(graph.beginSetup())
+    graph.endSetup()
+    graph.enableAutomaticProcessing()
+    #expect(!graph.wantsProcessing)
+    #expect(!graph.running)
+    let relaunched = AudioGraph(defaults: defaults)
+    relaunched.enableAutomaticProcessing()
+    #expect(!relaunched.wantsProcessing)
+    graph.shutdown()
+    relaunched.shutdown()
 }
 
 @Test func filesystemCandidatesDistinguishFormatsWithoutLoadingCode() throws {

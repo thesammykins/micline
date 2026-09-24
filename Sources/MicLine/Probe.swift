@@ -7,6 +7,8 @@ import MicLineCore
 func runProbe(_ graph: AudioGraph) async {
     let args = CommandLine.arguments
     guard let index = args.firstIndex(of: "--report"), args.indices.contains(index + 1) else { return }
+    graph.suspendAutomaticProcessing()
+    defer { graph.shutdown() }
     let path = URL(fileURLWithPath: args[index + 1])
     var report: [String: Any] = ["scope": "Real microphone; physical output muted or explicitly selected virtual output. Loopback reports experimental timestamp-aligned waveform lag, NOT delivery or end-to-end latency.", "startedAt": ISO8601DateFormatter().string(from: Date())]
     report["devices"] = graph.devices.map { ["name": $0.name, "uid": $0.uid, "rate": $0.sampleRate, "bufferFrames": $0.bufferFrames] as [String: Any] }

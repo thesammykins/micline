@@ -10,6 +10,10 @@ public final class AudioGraph: ObservableObject {
     @Published public var devices: [AudioDevice] = []
     @Published public var plugins: [PluginRecord] = []
     @Published public var settings: SessionSettings { didSet { save(); applyControls() } }
+    @Published public private(set) var wantsProcessing = false
+    private var automaticSuspended = false
+    private var recoveryAttempts = 0
+    private var nextRecoveryTime = 0.0
     @Published public private(set) var running = false
     @Published public private(set) var monitoring = false
     @Published public private(set) var checkingInput = false
@@ -69,7 +73,7 @@ public final class AudioGraph: ObservableObject {
         Self.scheduleMeterTimer(meterTimer)
         timer = meterTimer
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.stop() }
+            MainActor.assumeIsolated { self?.shutdown() }
         }
     }
 
@@ -125,7 +129,46 @@ public final class AudioGraph: ObservableObject {
         return true
     }
 
-    public func endSetup() { stop(); setupActive = false }
+    public func endSetup() {
+        stop(); setupActive = false
+        if defaults.bool(forKey: "completedSetup") { enableAutomaticProcessing() }
+    }
+
+    public func enableAutomaticProcessing() {
+        guard !defaults.bool(forKey: "microphonePrivacyPaused"),
+              defaults.object(forKey: "startProcessingOnLaunch") as? Bool != false else { return }
+        wantsProcessing = true
+        recoveryAttempts = 0
+        nextRecoveryTime = 0
+    }
+
+    public func shutdown() { wantsProcessing = false; automaticSuspended = true; stop() }
+
+    public func pauseProcessing() {
+        wantsProcessing = false
+        defaults.set(true, forKey: "microphonePrivacyPaused")
+        stop(message: "Microphone access paused. Resume from the menu bar when ready.")
+    }
+
+    public func suspendAutomaticProcessing() { automaticSuspended = true; stop() }
+    public func restoreAutomaticProcessing() { automaticSuspended = false; recoveryAttempts = 0 }
+
+    private func recoverProcessing(now: Double) {
+        guard wantsProcessing, !automaticSuspended, !setupActive, !running, !loading,
+              !checkingInput, checkDeadline == nil, selectedOutput?.isVirtual == true,
+              canStart, routeIssue == nil, recoveryAttempts < 3, now >= nextRecoveryTime,
+              AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { return }
+        recoveryAttempts += 1
+        nextRecoveryTime = now + 3
+        let token = generation
+        loading = true
+        Task { [weak self] in
+            guard let self, self.generation == token, self.wantsProcessing,
+                  !self.setupActive, !self.automaticSuspended else { return }
+            self.loading = false
+            await self.startGraph(mutePhysicalOutput: false, referenceCapture: nil, monitor: nil)
+        }
+    }
 
     public func startSetupOutputCheck() async {
         guard setupActive, selectedOutput?.isVirtual == true, canStart, !running else { return }
@@ -149,17 +192,17 @@ public final class AudioGraph: ObservableObject {
             running: running, monitoring: monitoring, events: diagnostics.entries)
     }
 
-    public func selectInput(_ uid: String) { guard uid != settings.inputUID else { return }; stop(); settings.inputUID = uid; settings.inputChannel = 0 }
-    public func selectOutput(_ uid: String) { guard uid != settings.outputUID else { return }; stop(); settings.outputUID = uid; settings.outputChannel = 0 }
+    public func selectInput(_ uid: String) { guard uid != settings.inputUID else { return }; stop(); recoveryAttempts = 0; settings.inputUID = uid; settings.inputChannel = 0 }
+    public func selectOutput(_ uid: String) { guard uid != settings.outputUID else { return }; stop(); recoveryAttempts = 0; settings.outputUID = uid; settings.outputChannel = 0 }
 
     public func selectInputChannel(_ channel: Int) {
         guard channel != selectedInputChannel else { return }
-        stop(); settings.inputChannel = channel
+        stop(); recoveryAttempts = 0; settings.inputChannel = channel
     }
 
     public func selectOutputChannel(_ channel: Int) {
         guard channel != selectedOutputChannel else { return }
-        stop(); settings.outputChannel = channel
+        stop(); recoveryAttempts = 0; settings.outputChannel = channel
     }
 
     public func add(_ plugin: PluginRecord) {
@@ -194,6 +237,7 @@ public final class AudioGraph: ObservableObject {
         let monitor = monitorUID.flatMap { uid in devices.first { $0.uid == uid } }
         stop()
         edit()
+        recoveryAttempts = 0
         guard resume else { return }
         guard monitorUID == nil || monitor != nil else {
             status = "The monitoring output is unavailable. Check devices before starting again."
@@ -383,6 +427,11 @@ public final class AudioGraph: ObservableObject {
     public func start(mutePhysicalOutput: Bool = false, referenceCapture: ProbeCapture? = nil,
                       maximumDuration: Duration? = nil) async {
         guard !setupActive, canStart, !running, !Task.isCancelled else { return }
+        if !mutePhysicalOutput && referenceCapture == nil && maximumDuration == nil {
+            wantsProcessing = true
+            defaults.set(false, forKey: "microphonePrivacyPaused")
+            recoveryAttempts = 0
+        }
         await startGraph(mutePhysicalOutput: mutePhysicalOutput, referenceCapture: referenceCapture, monitor: nil,
             checkDuration: maximumDuration)
     }
@@ -641,6 +690,11 @@ public final class AudioGraph: ObservableObject {
                 inputSignalMissing: inputMeter.frames > 48_000 && input.rmsDBFS <= -90))
         }
         lastMeterPoll = now
+        if running && engine?.isRunning == false {
+            stop(message: "Audio was interrupted. Reconnecting the saved route…")
+        }
+        if running && now > nextRecoveryTime + 30 { recoveryAttempts = 0 }
+        recoverProcessing(now: now)
         if deviceScan.isDue(now: now) {
             let updated = DeviceRegistry.devices()
             if running && (!updated.contains { $0.uid == settings.inputUID && $0.inputChannels > 0 } || !updated.contains { $0.uid == settings.outputUID && $0.outputChannels > 0 }) {
@@ -659,6 +713,12 @@ public final class AudioGraph: ObservableObject {
                 stop(message: "Microphone disconnected or changed. Choose an input and check again.")
             }
             if updated != devices {
+                // Only the selected device's return replenishes retries; unrelated
+                // device churn must not create an unlimited restart loop.
+                if selectedInput == nil && updated.contains(where: { $0.uid == settings.inputUID }) ||
+                   selectedOutput == nil && updated.contains(where: { $0.uid == settings.outputUID }) {
+                    recoveryAttempts = 0
+                }
                 if running, let privateRoute {
                     do { try privateRoute.verifyDevices() }
                     catch { stop(message: "Selected audio topology changed. Check channels and start again.") }

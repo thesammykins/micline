@@ -34,8 +34,9 @@ graph over frameworks, generic wrappers or hypothetical extension points.
   starting. AVAudioEngine owns formats: negotiate through connections, not HAL
   stream-format writes. Fail closed on changed topology or unavailable devices.
 - Bypass skips effects/EQ but retains gain. Structural effect edits briefly stop and rebuild audio, then resume an active user session. Diagnostic and setup checks never auto-resume.
-- Automatic processing is a separate, default-off opt-in from login launch.
-  Only a saved virtual-output route may auto-start. Physical monitoring requires
+- Processing defaults on after setup, independently of opt-in login launch.
+  Preserve an explicit privacy pause across setup and relaunch. Only a saved
+  virtual-output route may auto-start. Physical monitoring requires
   explicit device-specific feedback confirmation; never restore it on launch.
 - BlackHole is an external user-installed dependency, never bundled or installed
   by the app. GPL source and vendor binary terms are distinct. No custom driver.
@@ -46,6 +47,12 @@ graph over frameworks, generic wrappers or hypothetical extension points.
   while detecting either polarity by magnitude.
 
 ## UI and product
+
+- Canonical design: `design/openpencil/sound-check-v2/micline-sound-check-v2.fig`.
+  Mock all future UI changes in this file. Iterate its existing screens and
+  components; preserve their layout, density and control conventions unless
+  the user explicitly approves a redesign. Present concepts for approval before
+  implementation. Do not create competing standalone design documents.
 
 - Main window: route, levels, gain, compact ordered effects, processing state.
   Settings: onboarding/recovery, startup/Dock preferences, advanced diagnostics.

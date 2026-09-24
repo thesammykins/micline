@@ -28,7 +28,7 @@ enum SetupLesson: String {
         case .output: ["Choose an installed virtual device as Processed output.", "Use the same channel pair in the receiving app if it offers a channel choice."]
         case .handoff: ["Open your call app's audio settings.", "Choose the virtual device shown here as its microphone; keep its speaker output on your headphones."]
         case .verify: ["Start Output Check sends your processed microphone to the selected virtual device.", "Speak and watch the input meter in your call app.", "Confirm reception here only after that meter responds."]
-        case .ready: ["Start processing before joining a call, and Stop when finished.", "Use Bypass to compare your effects with the original sound at the same gain.", "Open an effect's Controls to adjust it. Adding or moving effects briefly pauses audio, then resumes it."]
+        case .ready: ["MicLine keeps your saved virtual route processing in the background. Use Pause microphone in the menu bar when you want capture off.", "Use Bypass to compare your effects with the original sound at the same gain.", "Use an effect's sliders button to adjust it. Adding or moving effects briefly pauses audio, then resumes it."]
         }
     }
     var videoHeight: CGFloat { 280 }
@@ -43,7 +43,7 @@ enum SetupLesson: String {
         case .output: ["Choose an installed virtual output", "Keep track of the selected channel pair", "BlackHole is one option"]
         case .handoff: ["Match this device in your call app", "Use it as the call app microphone", "Keep speaker output on your headphones"]
         case .verify: ["Check the input meter in your call app", "MicLine cannot confirm reception for you", "Confirm only when that meter responds"]
-        case .ready: ["Bypass compares effects at the same gain", "Controls opens each effect editor", "Start before calls; Stop when finished"]
+        case .ready: ["Bypass compares effects at the same gain", "The sliders button opens each effect editor", "Processing continues while MicLine is open"]
         }
     }
     var recordingNote: String {
@@ -56,7 +56,7 @@ enum SetupLesson: String {
         case .welcome: "Follow your voice from the microphone, through effects, to the output used by your call app."
         case .permission: "This example already has access. On first use, choose Allow Microphone and accept the macOS prompt."
         case .microphone: "An audio interface may have several inputs. Select the channel where your microphone is connected."
-        case .ready: "Your everyday controls are Start, Bypass and each effect's Controls. Closing the window keeps processing active."
+        case .ready: "Use Bypass to compare effects and the sliders button to adjust an effect. Closing the window keeps processing active."
         }
     }
 }

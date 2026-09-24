@@ -54,6 +54,13 @@ screenshots, Apple design kit or bundled font. Device names are synthetic.
 
 ## Reproduce designs
 
+The **Everyday · Controls** page in this same FIG contains the coloured
+menu-bar segments, gain dial/slider, compact mode and contextual explanations.
+See [EVERYDAY-CONTROLS.md](EVERYDAY-CONTROLS.md) and `everyday-controls.png`.
+Keep future revisions in this document so they share the existing design context.
+`everyday-controls.jsx` and `everyday-light.jsx` contain render sources; the legacy command below
+rebuilds the original journey/recovery only and does not preserve this added page.
+
 ```sh
 openpencil eval design/openpencil/micline-refinement-candidate.fig \
   --stdin -o design/openpencil/sound-check-v2/micline-sound-check-v2.fig \

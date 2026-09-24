@@ -69,6 +69,9 @@ public struct SessionSettings: Codable, Equatable {
     // Optional keys preserve sessions saved before explicit channel selection.
     public var inputChannel: Int?
     public var outputChannel: Int?
+    public var minimumGainDB: Double?
+    public var maximumGainDB: Double?
+    public var gainRange: ClosedRange<Double> { (minimumGainDB ?? -24)...(maximumGainDB ?? 12) }
     public var gainDB: Double = 0
     public var highPassHz: Double = 80
     public var highPassEnabled = true
@@ -78,6 +81,13 @@ public struct SessionSettings: Codable, Equatable {
         inputChannel = min(255, max(0, inputChannel ?? 0))
         outputChannel = min(255, max(0, outputChannel ?? 0))
         gainDB = gainDB.isFinite ? min(12, max(-24, gainDB)) : 0
+        // Old sessions retain their level; malformed or narrower persisted limits
+        // expand to include it rather than changing the sound on launch.
+        let lower = minimumGainDB.flatMap { $0.isFinite ? $0 : nil } ?? -24
+        let upper = maximumGainDB.flatMap { $0.isFinite ? $0 : nil } ?? 12
+        minimumGainDB = min(gainDB, min(0, max(-24, lower)))
+        maximumGainDB = max(gainDB, max(0, min(12, upper)))
+        if minimumGainDB == maximumGainDB { minimumGainDB = -24; maximumGainDB = 12 }
         highPassHz = highPassHz.isFinite ? min(300, max(20, highPassHz)) : 80
         effects = Array(effects.prefix(16))
         var seen = Set<UUID>()

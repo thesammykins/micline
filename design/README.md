@@ -1,5 +1,12 @@
 # MicLine design provenance
 
+The canonical editable design is
+[`micline-sound-check-v2.fig`](openpencil/sound-check-v2/micline-sound-check-v2.fig).
+All future concepts belong in this document and must evolve its existing screens
+and components. Preserve layout, density, typography and native control patterns;
+do not substitute a new visual system. Present revisions for user approval before
+implementation. Earlier design files are historical references, not new workspaces.
+
 Production UI uses native SwiftUI/AppKit controls and system typography. No
 Apple design kit or community template is bundled with MicLine.
 

@@ -26,7 +26,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            GeneralSettingsView(updater: updater)
+            GeneralSettingsView(graph: graph, updater: updater)
                 .tabItem { Label("General", systemImage: "slider.horizontal.3") }.tag(Pane.general)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -52,20 +52,28 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
+    @ObservedObject var graph: AudioGraph
     @ObservedObject var updater: MicLineUpdater
     @AppStorage("showInDock") private var showInDock = true
+    @AppStorage("appearance") private var appearance = "system"
 
     var body: some View {
         Form {
             Section("General") {
+                Picker("Appearance", selection: $appearance) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }.pickerStyle(.segmented)
                 Toggle("Show MicLine in the Dock", isOn: $showInDock)
                     .onChange(of: showInDock) { _, visible in AppDelegate.setDockVisible(visible) }
                     .help("Show or hide MicLine's Dock icon. The menu-bar icon remains available.")
                 Text("The menu-bar icon remains available when the Dock icon is hidden. Closing a window does not stop processing.")
                     .font(.caption).foregroundStyle(.secondary)
                 LoginItemToggle()
-                AutomaticProcessingToggle()
+                AutomaticProcessingToggle(graph: graph)
             }
+            ControlPreferences(graph: graph)
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: Binding(
                     get: { updater.automaticallyChecksForUpdates },
@@ -99,7 +107,7 @@ struct GeneralSettingsView: View {
     private var updateStatus: String {
         switch updater.availability {
         case .ready: return "Signed update checking is configured."
-        case .unavailable: return "Secure update checking is unavailable in this build."
+        case .unavailable: return "Updates are unavailable in this build. Local development builds do not use the public update feed."
         }
     }
 }
@@ -140,7 +148,7 @@ struct AdvancedSettingsView: View {
                     }
                 }
                 if graph.running || graph.loading || graph.checkingInput {
-                    Button("Stop check or processing") { graph.stop() }
+                    Button("Pause microphone access") { graph.pauseProcessing() }
                         .help("Stop the current audio check or processing session.")
                 }
                 LabeledContent {
@@ -201,7 +209,7 @@ struct AboutSettingsView: View {
             }
             GroupBox("Updates") {
                 HStack {
-                    Text(updater.availability == .ready ? "Secure automatic update checking is configured." : "Secure automatic updates are unavailable until a signed feed is configured.")
+                    Text(updater.availability == .ready ? "Signed updates are available through MicLine's public release feed." : "Updates are unavailable in this build. Local development builds do not use the public update feed.")
                     Spacer()
                 }.padding(8)
             }
@@ -374,13 +382,15 @@ struct LoginItemToggle: View {
 }
 
 struct AutomaticProcessingToggle: View {
-    @AppStorage("startProcessingOnLaunch") private var enabled = false
+    @ObservedObject var graph: AudioGraph
+    @AppStorage("startProcessingOnLaunch") private var enabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle("Start processing when MicLine opens", isOn: $enabled)
+                .onChange(of: enabled) { _, value in if value { graph.enableAutomaticProcessing() } }
                 .help("Automatically start only a saved virtual-output route. Physical monitoring stays off.")
-            Text("Uses the saved virtual output only and fails stopped if unavailable. Physical monitoring always stays off.")
+            Text("Uses your saved virtual route and resumes when its devices return. Physical monitoring requires confirmation. A privacy pause stays paused.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

@@ -65,6 +65,9 @@ its private aggregate is destroyed and reject stale async generations.
 Setup owns its capture sessions. Opening a raw check transfers capture from the
 normal route; it does not need a virtual output. Structural effect edits resume
 active user processing but must never unmute or resume diagnostic/setup sessions.
+Automatic recovery uses processing intent, not engine state. Explicit privacy
+pause persists across launches. Diagnostics suspend recovery until their task has
+finished cancellation; quit clears intent without turning it into a saved pause.
 
 ## Diagnostics and live checks
 

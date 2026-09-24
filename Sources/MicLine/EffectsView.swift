@@ -115,7 +115,8 @@ struct EffectRow: View {
             .labelsHidden().toggleStyle(.switch).controlSize(.small)
             .help("Include or bypass \(name) without removing it from the chain.")
             .accessibilityHint("Turns this effect on or bypasses it.")
-            Button("Controls") { graph.openEditor(effect.id) }
+            Button { graph.openEditor(effect.id) } label: { Image(systemName: "slider.horizontal.3") }
+                .accessibilityLabel("Adjust \(name)")
                 .disabled(graph.loading)
                 .help("Open the controls supplied by \(name).")
             Button(role: .destructive) { graph.remove(effect.id) } label: {
