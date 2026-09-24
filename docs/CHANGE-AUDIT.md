@@ -82,7 +82,8 @@ External changes: repository made public after a redacted history scan; Pages
 configured for Actions; four environment secrets and five public variables
 configured. Dedicated Developer ID and Notary credentials created with explicit
 approval. Private material remains outside source. No existing credentials
-revoked. Apple accepted the local app; no public tag/release has been published.
+revoked. Apple accepted the local app at this preparation stage; publication
+is recorded below.
 Stage Manager restored on after recordings; MicLine left stopped with Clear and
 saved route/settings preserved. Hunk reviewed the complete working-tree diff.
 
