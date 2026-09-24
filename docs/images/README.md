@@ -1,10 +1,8 @@
 # Product screenshots
 
-`micline-processing.png` was captured natively with macOS screencapture from
-MicLine 1.1.0 on 24 September 2026. It shows the current gain controls, icon
-actions, live meters and a configured effect. The computer-use capture session
-was closed first; no recording badge, generated retouching or microphone audio
-is included.
+`micline-processing.png` is Samantha's native MicLine 1.1.0 screenshot,
+supplied on 24 September 2026 and used unchanged. It shows the gain dial,
+icon actions, live meters and a configured effect, without recording overlays.
 
 `guided-setup.jpg` was captured from the running native app on macOS 27 on
 24 September 2026 using the 1.0.0 UI source and a development-signed local build.
