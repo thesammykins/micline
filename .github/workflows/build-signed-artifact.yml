@@ -169,7 +169,7 @@ jobs:
           ./scripts/notarize.sh "$dmg" "$RUNNER_TEMP/micline-dmg-notary"
           xcrun stapler staple "$dmg"
           xcrun stapler validate "$dmg"
-          spctl --assess --type open --verbose=4 "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
           mount="$RUNNER_TEMP/micline-verify"
           mkdir -p "$mount"
           trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
