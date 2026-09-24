@@ -43,6 +43,11 @@ arguments, source, logs, screenshots or release artifacts.
 | `MICLINE_SPARKLE_FEED_URL` | `https://thesammykins.github.io/micline/updates/appcast.xml` |
 | `MICLINE_SPARKLE_PUBLIC_ED_KEY` | `8xebTYbUJ0zu3ucaaJOs6W7nxPIaVf8AU7vZDDMDvx8=` |
 
+For PKCS#12 exports made with OpenSSL 3, use `-keypbe PBE-SHA1-3DES
+-certpbe PBE-SHA1-3DES -macalg sha1` for macOS Keychain import compatibility.
+Verify import and the exact fingerprint in a disposable Keychain before updating
+the certificate/password secrets together. OpenSSL defaults failed CI import.
+
 The new Sparkle key is retained locally under Keychain account
 `com.sammy.micline` and provisioned in GitHub. No public release used the earlier
 unavailable key, so the first release establishes this key as its trust root.
