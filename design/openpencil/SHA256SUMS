@@ -1,0 +1,11 @@
+67b03d3e9435bdc78107f7b7d6d148add0fa34410deaa0668d9abed44333441d  ./.gitattributes
+59a1db168a9c288981ceabab3db4f66669757f06be0b43a6a2d661d649f3eb65  ./README.md
+cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  ./licenses/Apache-2.0.txt
+b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57  ./licenses/Lucide-Feather-LICENSE.txt
+a766c2f87e66a73bd9f4a7224018b6ad881e14cbc561dd7b20ee002c26e4de29  ./micline-refinement-candidate.fig
+b8d582378aeea4adf74cecdbb99c96b09803ddac571b3da5c69d12bacf14499b  ./previews/components.png
+a75f7915c8e91dfcd86cf47287bb170a045d13202265c2807d1224586d7e4e0e  ./previews/effect-reordering.png
+747a343696431c290def1801d0307548d5b86624bba2db33b6c3324a1ffd812f  ./previews/installer.png
+aa2f1a0b06f20a20aa4abb22b6163f8c4763980c8d67b8bbe684ccddeba03d94  ./previews/main.png
+2ff3d74a7fdbe7b23bb43f315e22ef14635007506dfcb8ba2c4e77b3788f0bd6  ./previews/screens.png
+178cf7b442c649de3ec37f3c9c04676c36429ef5a5f9939102537aa62e730ca8  ./previews/states-and-flows.png
