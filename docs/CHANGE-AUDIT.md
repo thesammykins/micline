@@ -135,3 +135,11 @@ of this cleanup.
 - Release procedure and results updated with evidence and investigation limits.
 
 No generated image was used. Existing 1.0.0 release files remain immutable.
+
+The first 1.0.1 candidate stopped before publication because ElementTree had
+renamed Sparkle's namespace prefix. Sparkle's writer subsequently emitted an
+undefined prefix. The real 1.0.0 feed reproduced this failure; normalising its
+verified local working copy and preserving the sparkle prefix resolves it. The
+two-release fixture now includes our first-feed serialization step. Publishing
+is explicitly restricted to Actions with GH_TOKEN and SPARKLE_PRIVATE_KEY; no
+local Keychain fallback exists.

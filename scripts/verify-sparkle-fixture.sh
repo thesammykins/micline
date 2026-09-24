@@ -86,7 +86,10 @@ ditto -c -k --sequesterRsrc --keepParent "$OLD_APP" "$UPDATES/MicLineFixture-1.0
 printf '%s\n' "$PUBLIC_TEST_SEED" | "$GENERATE_APPCAST" --ed-key-file - \
     --download-url-prefix 'https://github.com/thesammykins/micline/releases/download/v1.0.0/' \
     "$UPDATES" >/dev/null
+python3 "$ROOT/scripts/prepare-release-feed.py" "$APPCAST" "$UPDATES" v1.0.0 1 ""
+printf '%s\n' "$PUBLIC_TEST_SEED" | "$SIGN_UPDATE" --ed-key-file - "$APPCAST" >/dev/null
 cp "$APPCAST" "$WORK_DIR/previous-appcast.xml"
+python3 "$ROOT/scripts/prepare-release-feed.py" --normalize "$APPCAST"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
 
 generate_output="$(

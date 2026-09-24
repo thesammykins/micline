@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
+[[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Release publication runs only in GitHub Actions" >&2; exit 1; }
+: "${GH_TOKEN:?GitHub Actions token is required}"
 : "${GH_REPO:?}"
 : "${RELEASE_TAG:?}"
 : "${MICLINE_VERSION:?}"
@@ -34,14 +36,18 @@ if [[ -n "$previous" ]]; then
     gh release download "$previous" --pattern 'MicLine-*.dmg' --pattern appcast.xml --dir "$updates"
     printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/sign_update" --ed-key-file - --verify "$updates/appcast.xml"
     cp "$updates/appcast.xml" "$RUNNER_TEMP/previous-appcast.xml"
+    python3 scripts/prepare-release-feed.py --normalize "$updates/appcast.xml"
 fi
 cp "build/MicLine-$MICLINE_VERSION.dmg" "$updates/"
 # Sparkle rewrites URLs for every archive present. Restore previous feed items
 # below before signing the final feed, keeping their original release URLs.
-printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/generate_appcast" \
+if ! printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/generate_appcast" \
     --ed-key-file - --versions "$MICLINE_BUILD_NUMBER" --maximum-deltas 1 \
     --download-url-prefix "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/" \
-    "$updates" > "$RUNNER_TEMP/micline-appcast-generation.log"
+    "$updates" > "$RUNNER_TEMP/micline-appcast-generation.log" 2>&1; then
+    cat "$RUNNER_TEMP/micline-appcast-generation.log" >&2
+    exit 1
+fi
 if grep -q 'does not match' "$RUNNER_TEMP/micline-appcast-generation.log"; then
     echo "Sparkle key does not match the application's public key" >&2; exit 1
 fi

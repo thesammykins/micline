@@ -54,9 +54,10 @@ For PKCS#12 exports made with OpenSSL 3, use `-keypbe PBE-SHA1-3DES
 Verify import and the exact fingerprint in a disposable Keychain before updating
 the certificate/password secrets together. OpenSSL defaults failed CI import.
 
-The new Sparkle key is retained locally under Keychain account
-`com.sammy.micline` and provisioned in GitHub. No public release used the earlier
-unavailable key, so the first release establishes this key as its trust root.
+The release job receives the Sparkle key exclusively from the `SPARKLE_PRIVATE_KEY`
+GitHub environment secret via stdin. It never falls back to a local Keychain.
+The publishing script refuses to run outside GitHub Actions. The first public
+release establishes this key as its trust root.
 
 A dedicated Developer ID identity was created on 24 September 2026, paired
 with its local private key and provisioned in GitHub secrets. Its SHA-1 is
@@ -122,6 +123,7 @@ or Trellis credentials.
 
 Sparkle 2.10.0 is pinned. Automatic checks/downloads/installations and profiling
 remain off until the user opts in; manual Check for Updates uses the signed feed.
-The private update-signing key is available only to the tag release job and
-local Keychain. Its public key is embedded in the app. Retain this private key
+Release signing and appcast publication run in CI using GitHub secrets. Local
+development and installed-app update checks need no private release credentials.
+The public update key is embedded in the app. Retain the GitHub secret
 across future releases so installed copies can verify their updates.

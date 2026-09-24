@@ -7,9 +7,16 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
+ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+# Sparkle's writer creates literal sparkle:* elements, so retain that prefix.
+ET.register_namespace('sparkle', ns[1:-1])
+if len(sys.argv) == 3 and sys.argv[1] == '--normalize':
+    # Call only on a local working copy AFTER verifying the downloaded signature.
+    # This discards the old signature; the resulting feed must be signed again.
+    ET.parse(sys.argv[2]).write(sys.argv[2], encoding='utf-8', xml_declaration=True)
+    sys.exit(0)
 feed, directory, tag, build, previous = sys.argv[1:6]
 notes = Path(sys.argv[6]) if len(sys.argv) == 7 else None
-ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
 tree = ET.parse(feed)
 root = tree.getroot()
 channel = root.find('channel')
