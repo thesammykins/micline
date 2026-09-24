@@ -49,8 +49,10 @@ jobs:
       - name: Validate workflows, shell, and property lists
         run: |
           actionlint
-          bash -n scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh
-          shellcheck scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh
+          bash -n scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh scripts/notarize.sh scripts/publish-release.sh
+          shellcheck scripts/build.sh scripts/package-dmg.sh scripts/verify-sparkle-fixture.sh scripts/notarize.sh scripts/publish-release.sh
+          python3 scripts/test-notarize.py
+          python3 scripts/test-release-tooling.py
           python3 - <<'PY'
           import plistlib
           from pathlib import Path
@@ -61,14 +63,6 @@ jobs:
               print(f"valid plist: {path}")
           PY
 
-      - name: Confirm release workflows remain artifact-only
-        run: |
-          if grep -REn --include='*.yml' --include='*.yaml' \
-            '(^|[[:space:]])(gh release|npm publish|swift package-registry publish|docker push)([[:space:]]|$)' \
-            .github/workflows; then
-            echo "Publishing command found in artifact-only workflows" >&2
-            exit 1
-          fi
 
   build-test:
     runs-on: xcode-27

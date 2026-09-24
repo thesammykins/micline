@@ -13,13 +13,6 @@ public struct AudioDevice: Identifiable, Codable, Hashable {
 }
 
 public enum DeviceRegistry {
-    // AVAudioEngine's I/O nodes share an AUHAL. Independent devices need a
-    // real split-I/O transport; Apple's default pair is its own aggregate.
-    public static func supportsRoute(input: AudioDeviceID, output: AudioDeviceID,
-                                     defaultInput: AudioDeviceID, defaultOutput: AudioDeviceID) -> Bool {
-        input == output || (input == defaultInput && output == defaultOutput)
-    }
-
     public static func defaultDevice(input: Bool) -> AudioDeviceID {
         scalar(AudioObjectID(kAudioObjectSystemObject), input ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice, fallback: AudioDeviceID(0))
     }

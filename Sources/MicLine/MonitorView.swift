@@ -12,10 +12,8 @@ struct MonitorButton: View {
     }
 
     private var supported: Bool {
-        guard let input = graph.selectedInput, let output = graph.selectedOutput, let monitor = selected else { return false }
-        return !input.isVirtual && input.inputChannels == 1 && input.outputChannels == 0 &&
-            output.isVirtual && output.outputChannels == 2 && input.sampleRate == output.sampleRate &&
-            monitor.outputChannels == 2 && monitor.sampleRate == output.sampleRate && monitor.uid != input.uid
+        guard let selected else { return false }
+        return graph.canMonitor(on: selected)
     }
 
     var body: some View {
@@ -28,7 +26,7 @@ struct MonitorButton: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
-        .disabled(!allowsMonitoring || graph.loading || (!graph.monitoring && !supported))
+        .disabled(!allowsMonitoring || graph.setupActive || graph.loading || (!graph.monitoring && !supported))
         .help(helpText)
         .accessibilityLabel(graph.monitoring ? "Stop monitoring" : "Monitor processed microphone")
         .accessibilityHint(graph.monitoring
@@ -42,14 +40,14 @@ struct MonitorButton: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("MicLine will restart processing and send your live microphone to both \(graph.selectedOutput?.name ?? "the virtual output") and \(selected?.name ?? "the selected output"). Speakers can cause loud feedback. Use headphones and lower the device’s listening volume first. Monitoring follows the main gain.")
+            Text("MicLine will restart processing and send your live microphone to both \(graph.selectedOutput?.name ?? "the virtual output") and \(selected?.name ?? "the selected output"). Speakers can cause loud feedback. Use headphones and lower the device's listening volume first. Monitoring follows the main gain.")
         }
     }
 
     private var helpText: String {
         if graph.monitoring { return "Stop physical monitoring. Processing stops; press Start to continue to the virtual output only." }
         if selected == nil { return "Choose a physical monitor output in Settings → Audio Setup." }
-        if !supported { return "The selected monitor must be stereo and use the same sample rate as the microphone and virtual output." }
+        if !supported { return "Choose a distinct physical stereo monitor and an available microphone/output channel pair." }
         return "Monitor through \(selected!.name). Explicit confirmation is required."
     }
 }

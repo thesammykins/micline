@@ -4,6 +4,8 @@ import MicLineCore
 struct LevelMeterView: View {
     let title: String
     let reading: MeterReading
+    var compact = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private let ticks: [(Double, String)] = [
         (-90, "−90"), (-60, "−60"), (-36, "−36"), (-18, "−18"), (-9, "−9"), (0, "0 dBFS"),
@@ -15,40 +17,49 @@ struct LevelMeterView: View {
             HStack(spacing: 16) {
                 Text(title.uppercased()).fontWeight(.semibold)
                 Spacer()
-                Text("RMS \(formatted(reading.rmsDBFS)) dBFS")
+                Text(compact ? "PEAK \(formatted(reading.samplePeakDBFS)) dBFS" : "RMS \(formatted(reading.rmsDBFS)) dBFS")
                     .foregroundStyle(.secondary)
-                Text("SAMPLE PEAK \(formatted(reading.samplePeakDBFS)) · HOLD \(formatted(reading.heldSamplePeakDBFS)) dBFS")
-                    .foregroundStyle(.primary)
+                if !compact { Text("SAMPLE PEAK \(formatted(reading.samplePeakDBFS)) · HOLD \(formatted(reading.heldSamplePeakDBFS)) dBFS")
+                    .foregroundStyle(.primary) }
                 Text("CLIP")
                     .fontWeight(.bold)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(reading.clipped ? Color.red : Color.secondary.opacity(0.35), in: RoundedRectangle(cornerRadius: 4))
                     .foregroundStyle(.white)
+                    .opacity(reading.clipped ? 1 : 0)
             }
             .font(.caption)
             .monospacedDigit()
 
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    HStack(spacing: 0) {
-                        Color.green.opacity(0.36).frame(width: proxy.size.width * 0.8)
-                        Color.orange.opacity(0.42).frame(width: proxy.size.width * 0.1)
-                        Color.red.opacity(0.42)
+                    Capsule().fill(Color.secondary.opacity(0.18))
+                    LinearGradient(stops: [
+                        .init(color: .green, location: 0),
+                        .init(color: .green, location: 0.8),
+                        .init(color: .orange, location: 0.8),
+                        .init(color: .orange, location: 0.9),
+                        .init(color: .red, location: 0.9),
+                        .init(color: .red, location: 1)
+                    ], startPoint: .leading, endPoint: .trailing)
+                    .overlay(alignment: .top) {
+                        if !reduceTransparency {
+                            Capsule().fill(.white.opacity(0.16)).frame(height: 4).padding(2)
+                        }
                     }
-                    Rectangle()
-                        .fill(Color.cyan)
-                        .frame(width: proxy.size.width * position(reading.rmsDBFS), height: 12)
-                        .padding(.vertical, 4)
+                    .mask(alignment: .leading) {
+                        Capsule().frame(width: proxy.size.width * position(reading.rmsDBFS))
+                    }
                     marker(at: reading.samplePeakDBFS, width: 2, color: .white, proxy: proxy)
                     marker(at: reading.heldSamplePeakDBFS, width: 2, color: meterColor, proxy: proxy)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(Capsule())
             }
-            .frame(height: 20)
+            .frame(height: 18)
 
             GeometryReader { proxy in
-                ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
+                ForEach(Array((compact ? ticks.filter { [-90.0, -36.0, 0.0].contains($0.0) } : ticks).enumerated()), id: \.offset) { _, tick in
                     Text(tick.1)
                         .font(.caption2)
                         .monospacedDigit()
@@ -67,7 +78,7 @@ struct LevelMeterView: View {
 
     private var meterColor: Color {
         switch reading.band {
-        case .green: return .cyan
+        case .green: return .green
         case .orange: return .orange
         case .red: return .red
         }
@@ -94,7 +105,7 @@ struct LevelMeterView: View {
         if db > -90 {
             Rectangle()
                 .fill(color)
-                .frame(width: width, height: 20)
+                .frame(width: width, height: 18)
                 .offset(x: max(0, min(proxy.size.width - width, proxy.size.width * position(db))))
         }
     }
@@ -111,11 +122,12 @@ struct LevelMeterView: View {
 struct MeterPanel: View {
     let input: MeterReading
     let output: MeterReading
+    var compact = false
 
     var body: some View {
         VStack(spacing: 18) {
-            LevelMeterView(title: "Input", reading: input)
-            LevelMeterView(title: "Output", reading: output)
+            LevelMeterView(title: "Input", reading: input, compact: compact)
+            LevelMeterView(title: "Output", reading: output, compact: compact)
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
@@ -125,9 +137,10 @@ struct MeterPanel: View {
 
 struct LiveMeterPanel: View {
     @ObservedObject var display: MeterDisplay
+    var compact = false
 
     var body: some View {
-        MeterPanel(input: display.readings.input, output: display.readings.output)
+        MeterPanel(input: display.readings.input, output: display.readings.output, compact: compact)
     }
 }
 
@@ -137,8 +150,17 @@ struct MeterSignalWarning: View {
 
     var body: some View {
         if running && display.readings.inputSignalMissing {
-            Label("No microphone signal. If your MacBook lid is closed, open it.", systemImage: "mic.slash")
+            Label("No input signal. Check the microphone's mute switch and selected channel. If using a MacBook microphone, open the lid.", systemImage: "mic.slash")
                 .font(.callout).foregroundStyle(.orange)
         }
+    }
+}
+
+struct MenuOutputMeter: View {
+    @ObservedObject var display: MeterDisplay
+    var body: some View {
+        LevelMeterView(title: "Output", reading: display.readings.output, compact: true)
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 10))
     }
 }

@@ -154,7 +154,7 @@ IDENTITY="${MICLINE_SIGNING_CERTIFICATE_SHA1:-}"
 [[ "$IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] || die "MICLINE_SIGNING_CERTIFICATE_SHA1 must be a 40-character certificate fingerprint"
 IDENTITY="$(printf '%s' "$IDENTITY" | tr '[:lower:]' '[:upper:]')"
 if [[ "$SIGNING_MODE" == "developer-id" ]]; then
-    [[ "$IDENTITY" == "86FC6A8884A697D9D1D55BBF5B4E0FAF159AAA3E" ]] || \
+    [[ "$IDENTITY" == "EE3326E165ACAB5017293BFA8438034EFAC32F21" ]] || \
         die "developer-id builds require the dedicated MicLine certificate fingerprint"
 fi
 [[ "$(security find-identity -v -p codesigning | awk -v fingerprint="$IDENTITY" -v label="$EXPECTED_IDENTITY_TYPE" '
@@ -200,6 +200,9 @@ fi
 ditto "${BIN_PATHS[0]}/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 install -m 0644 "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 install -m 0644 "$ROOT/Resources/Sparkle-LICENSE.txt" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+if [[ -d "$ROOT/Resources/SetupLessons" ]]; then
+    ditto "$ROOT/Resources/SetupLessons" "$APP/Contents/Resources/SetupLessons"
+fi
 
 if [[ -n "$VERSION" ]]; then
     plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"

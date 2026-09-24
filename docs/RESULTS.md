@@ -1,4 +1,94 @@
-# Verification — 22 September 2026
+# Release assessment — 24 September 2026
+
+**CONDITIONAL GO.** The Developer ID app is signed, accepted by Apple with no
+issues, stapled and accepted by Gatekeeper as Notarized Developer ID. Dedicated
+GitHub secrets are configured. The first hosted tag release and public update
+feed deployment are the next acceptance gate. See [RELEASE-SETUP.md](RELEASE-SETUP.md).
+
+## Current implementation and evidence
+
+- Setup takes over capture automatically. Opening Check Microphone while the
+  saved route is processing starts a raw, input-only check immediately. The live
+  check showed changing levels, then stopped automatically with a retained peak.
+  Advanced Settings uses the same flow; duplicate setup entry is disabled.
+
+- 34 Swift tests pass on macOS 27 / Xcode 27 / SDK 27. Removed redundant smoke and
+  serialization checks; retained channel isolation, cancellation, DSP, hostile
+  payload and update-authenticity checks. Replaced a generic AU round trip with
+  restoration of the actual Apple setup presets. A preview-persistence regression
+  protects the saved session from discarded trials.
+- ARM64 Developer ID build, strict signature verification, Apple acceptance,
+  staple validation and Gatekeeper acceptance pass.
+- Explicit mono input-channel and output-pair selection now use a verified private
+  aggregate, including duplex inputs and mismatched nominal rates with drift
+  compensation. Static topology tests pass. Real fifine input 1 → BlackHole 16ch
+  outputs 1–2 produced nonzero input/output meters at 96 kHz. Real asymmetric-rate,
+  alternate channel and downstream-consumer acceptance remain outstanding.
+- Input-only raw checks run on fifine input 1 without an output connection, verify
+  output I/O is disabled, and stop automatically after five seconds. Native UI
+  readback confirmed capture, automatic stop and retained highest-peak reading.
+  No microphone PCM was saved. Device/OS processing upstream may still exist.
+- Main window is 720 points wide, with bounded height and scrolling effects.
+  Rounded colour-zoned meters preserve existing RMS/sample-peak ballistics.
+  Native main, microphone check, effect previews and setup output screens were
+  inspected. Narrow preview meters use compact ticks to prevent overlap.
+- Native setup requests permission explicitly, separates raw level from effects,
+  supports optional Apple Sound Isolation and Dynamics Processor trials, and
+  requires named physical-output confirmation before audition. Draft graphs do
+  not persist. Keep commits only the added effect; Undo leaves the chain alone.
+  Both Apple presets load and restore their configured state locally. Physical
+  listening quality, CPU and effect latency are not yet measured.
+- Ordinary processing cannot start while setup owns audio. Raw checks stop after
+  five seconds; preview/output checks stop after thirty. Deadlines cancel with
+  the graph and reject stale generations. Independent review found a stale UI
+  timeout; it was fixed by moving deadlines into the audio graph.
+- The selected virtual-output check starts and stops through the native setup
+  flow. Downstream success requires the user’s observation; it is not inferred
+  from MicLine’s own meters. No receiving call app was verified in this pass.
+- Ten step-specific silent guides total 253,572 bytes. Native AVQueuePlayer
+  looping and timed captions accompany the real control recordings; Reduce
+  Motion disables autoplay. The full guide sheet and inline introduction were
+  inspected in the signed build, including continued playback after a cycle.
+- Adding, moving and removing effects now rebuilds and resumes an active user
+  session. Live checks exercised those edits with Clear and Apple Hipass.
+  Setup/diagnostic sessions never auto-resume; explicit Stop invalidates pending
+  restarts. Independent review found and fixed a muted-diagnostic resume case.
+- The signed, hardened build loaded the installed Clear AU and started the
+  fifine input 1 to BlackHole 16ch outputs 1–2 route at 96 kHz. This is bounded
+  compatibility evidence, not a claim about every AU or audible sound quality.
+- The supplied FIG is preserved. OpenPencil’s live MCP opened the completed
+  29-screen journey/recovery design. Design exports are not runtime evidence.
+
+The first UI-driven routing check exceeded its originally approved five-second
+limit when Stop automation failed. MicLine was quit and verified stopped; the
+user was informed. Subsequent live checks were expressly authorised and the raw
+check was given an automatic graph-owned stop. Do not cite that first attempt as
+a successful bounded test.
+
+## Release tooling
+
+The two-release Sparkle fixture verifies full archives, signed deltas, delta
+reconstruction, preservation of previous release URLs and rejection of tampering
+or wrong keys. Six notarization and two release-boundary tests pass. The tag
+workflow signs, notarizes and publishes release assets, then deploys Pages.
+Published-release retries preserve immutable downloads and restore the latest
+verified feed. No hosted tag run or public feed deployment has occurred yet.
+
+The repository is public; dedicated Developer ID, Notary and Sparkle credentials
+are provisioned in GitHub's release-signing environment. There is no manual
+reviewer gate, following the requested tag-only release process.
+
+VST hosting is deferred: the inspected local effects have Audio Unit counterparts.
+Per-app routing is a design-led stretch goal, outside this release. BlackHole
+remains an optional external installation; alternatives can be selected. Guidance
+covers rescan and the vendor’s optional audio-service restart, with interruption
+and administrator warnings. Third-party AU support is not universal; the issue
+form requests exact plugin/version/architecture and reproduction details. The installed Clear AU was exercised in the final hardened build.
+
+Raw logs, complete window captures and capture timing are local and ignored under
+`evidence/onboarding-v2/` and `evidence/release-2026-09-24/`.
+
+# Earlier verification — 22 September 2026
 
 MicLine is a tested development app, not a notarized public release. The private
 repository is [thesammykins/micline](https://github.com/thesammykins/micline).

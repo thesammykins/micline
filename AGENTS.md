@@ -33,7 +33,7 @@ graph over frameworks, generic wrappers or hypothetical extension points.
 - Verify aggregate membership, stream order, clock/drift and channel maps before
   starting. AVAudioEngine owns formats: negotiate through connections, not HAL
   stream-format writes. Fail closed on changed topology or unavailable devices.
-- Bypass skips effects/EQ but retains gain. Structural effect edits stop audio.
+- Bypass skips effects/EQ but retains gain. Structural effect edits briefly stop and rebuild audio, then resume an active user session. Diagnostic and setup checks never auto-resume.
 - Automatic processing is a separate, default-off opt-in from login launch.
   Only a saved virtual-output route may auto-start. Physical monitoring requires
   explicit device-specific feedback confirmation; never restore it on launch.

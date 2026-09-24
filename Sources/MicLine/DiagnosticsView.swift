@@ -42,13 +42,13 @@ struct DiagnosticsView: View {
                 Text("Clear refreshes this exact preview; other report fields remain.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Export Reviewed JSON…") { export() }
+                Button("Export Reviewed JSON...") { export() }
                     .buttonStyle(.borderedProminent)
                     .help("Save exactly the JSON shown above to a local file.")
-                Button("Open GitHub Website…") {
+                Button("Open GitHub Website...") {
                     if let url = graph.diagnosticReport().issueURL { NSWorkspace.shared.open(url) }
                 }
-                .help("Open MicLine’s new-issue page. Nothing is submitted automatically.")
+                .help("Open MicLine's new-issue page. Nothing is submitted automatically.")
             }
             Text("Export is local. Attaching the reviewed file and submitting an issue are separate manual actions.")
                 .font(.caption).foregroundStyle(.secondary)

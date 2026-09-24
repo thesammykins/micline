@@ -31,13 +31,13 @@ struct MeasurementView: View {
             Text("Measurement JSON is not sanitized: it includes device names, identifiers and saved Audio Unit state. Review the exported file before sharing.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Consumer input", selection: $consumerUID) {
-                Text("Choose virtual input…").tag("")
+                Text("Choose virtual input...").tag("")
                 ForEach(matchingConsumers) { Text($0.name).tag($0.uid) }
             }
             .disabled(task != nil)
             .help("Choose the virtual input that matches the processed output.")
             Picker("Stimulus speaker", selection: $speakerUID) {
-                Text("Choose speaker…").tag("")
+                Text("Choose speaker...").tag("")
                 ForEach(physicalSpeakers) { Text($0.name).tag($0.uid) }
             }
             .disabled(task != nil)
@@ -49,7 +49,7 @@ struct MeasurementView: View {
                     HStack {
                         Button("Cancel") { dismiss() }
                             .help("Close the measurement check.")
-                        Button("Open Audio Setup…") { openAudioSetup() }
+                        Button("Open Audio Setup...") { openAudioSetup() }
                             .buttonStyle(.borderedProminent)
                             .help("Close this check and open Audio Setup to fix the route.")
                     }
@@ -64,7 +64,7 @@ struct MeasurementView: View {
                 Text(String(format: "Aligned lag: p50 %.3f ms · p95 %.3f ms · max %.3f ms", report.timestampAlignedLagMilliseconds.p50, report.timestampAlignedLagMilliseconds.p95, report.timestampAlignedLagMilliseconds.max)).monospacedDigit()
                 Text("Accepted \(report.acceptedTrials) of 20 probes; rejected \(20 - report.acceptedTrials).")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("Save measurement report…") {
+                Button("Save measurement report...") {
                     let panel = NSSavePanel()
                     panel.nameFieldStringValue = "micline-signal-alignment.json"
                     if panel.runModal() == .OK, let url = panel.url {
@@ -84,7 +84,7 @@ struct MeasurementView: View {
                     Button("Play bursts and measure") {
                         guard preflightIssue == nil, let consumer = selectedConsumer, let speaker = selectedSpeaker else { return }
                         report = nil
-                        message = "Running 20 probes… Keep other audio quiet. You can cancel at any time."
+                        message = "Running 20 probes... Keep other audio quiet. You can cancel at any time."
                         task = Task {
                             do { report = try await RouteProbe.run(graph: graph, consumer: consumer, speaker: speaker); message = "Measured \(report!.acceptedTrials)/20 valid trials." }
                             catch { message = "No result: \(error.localizedDescription)" }

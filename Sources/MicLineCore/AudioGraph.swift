@@ -12,6 +12,8 @@ public final class AudioGraph: ObservableObject {
     @Published public var settings: SessionSettings { didSet { save(); applyControls() } }
     @Published public private(set) var running = false
     @Published public private(set) var monitoring = false
+    @Published public private(set) var checkingInput = false
+    @Published public private(set) var setupActive = false
     @Published public private(set) var loading = false
     @Published public var bypass = false { didSet { applyControls() } }
     @Published public private(set) var status = "Choose an input and output, then start."
@@ -45,12 +47,15 @@ public final class AudioGraph: ObservableObject {
     private var observer: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
     private var generation = 0
+    private var checkDeadline: Task<Void, Never>?
+    private var resumesAfterEffectEdit = false
     private let defaults: UserDefaults
+    private let persistsSettings: Bool
     private var deviceScan = DeviceScanSchedule(now: ProcessInfo.processInfo.systemUptime)
-    private var usesDefaultRoute = false
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, persistsSettings: Bool = true) {
         self.defaults = defaults
+        self.persistsSettings = persistsSettings
         if let data = defaults.data(forKey: "session"), var value = try? JSONDecoder().decode(SessionSettings.self, from: data) {
             value.validate()
             settings = value
@@ -86,19 +91,45 @@ public final class AudioGraph: ObservableObject {
     public var outputs: [AudioDevice] { devices.filter { $0.outputChannels > 0 } }
     public var selectedInput: AudioDevice? { inputs.first { $0.uid == settings.inputUID } }
     public var selectedOutput: AudioDevice? { outputs.first { $0.uid == settings.outputUID } }
-    public var canStart: Bool { selectedInput != nil && selectedOutput != nil && !loading }
+    public var canStart: Bool { selectedInput != nil && selectedOutput != nil && !loading && !checkingInput }
     public var routeIssue: String? {
         guard let input = selectedInput, let output = selectedOutput else { return nil }
-        let direct = DeviceRegistry.supportsRoute(input: input.id, output: output.id,
-            defaultInput: DeviceRegistry.defaultDevice(input: true), defaultOutput: DeviceRegistry.defaultDevice(input: false))
-        return direct || PrivateAudioRoute.supports(input: input, output: output)
-            ? nil : "Choose the current default pair, one duplex device, or an input-only mono microphone and two-channel virtual output at the same sample rate. Other split routes are not supported."
+        do {
+            _ = try PrivateAudioRoutePlan(input: input, output: output, monitor: nil,
+                inputChannel: selectedInputChannel, outputChannel: selectedOutputChannel)
+            return nil
+        } catch { return error.localizedDescription }
     }
+    public var selectedInputChannel: Int { settings.inputChannel ?? 0 }
+    public var selectedOutputChannel: Int { settings.outputChannel ?? 0 }
+    public func canMonitor(on device: AudioDevice) -> Bool {
+        guard let input = selectedInput, let output = selectedOutput, output.isVirtual else { return false }
+        return (try? PrivateAudioRoutePlan(input: input, output: output, monitor: device,
+            inputChannel: selectedInputChannel, outputChannel: selectedOutputChannel)) != nil
+    }
+
     public var inputFrames: UInt64 { inputMeter.frames }
     public var outputFrames: UInt64 { outputMeter.frames }
     public var parameters: [AUParameter] {
         guard let id = genericEditorID else { return [] }
         return units[id]?.withAUAudioUnit { $0.parameterTree?.allParameters ?? [] } ?? []
+    }
+
+    public func beginSetup() -> Bool {
+        guard !setupActive else { return false }
+        // Setup takes ownership of capture; users should not have to stop a call
+        // route manually before checking the raw microphone or trying an effect.
+        stop()
+        setupActive = true
+        return true
+    }
+
+    public func endSetup() { stop(); setupActive = false }
+
+    public func startSetupOutputCheck() async {
+        guard setupActive, selectedOutput?.isVirtual == true, canStart, !running else { return }
+        await startGraph(mutePhysicalOutput: false, referenceCapture: nil, monitor: nil,
+            checkDuration: .seconds(30), checkMessage: "Output check finished. Start it again if you need more time.")
     }
 
     public func refresh() {
@@ -117,34 +148,71 @@ public final class AudioGraph: ObservableObject {
             running: running, monitoring: monitoring, events: diagnostics.entries)
     }
 
-    public func selectInput(_ uid: String) { guard uid != settings.inputUID else { return }; stop(); settings.inputUID = uid }
-    public func selectOutput(_ uid: String) { guard uid != settings.outputUID else { return }; stop(); settings.outputUID = uid }
+    public func selectInput(_ uid: String) { guard uid != settings.inputUID else { return }; stop(); settings.inputUID = uid; settings.inputChannel = 0 }
+    public func selectOutput(_ uid: String) { guard uid != settings.outputUID else { return }; stop(); settings.outputUID = uid; settings.outputChannel = 0 }
+
+    public func selectInputChannel(_ channel: Int) {
+        guard channel != selectedInputChannel else { return }
+        stop(); settings.inputChannel = channel
+    }
+
+    public func selectOutputChannel(_ channel: Int) {
+        guard channel != selectedOutputChannel else { return }
+        stop(); settings.outputChannel = channel
+    }
 
     public func add(_ plugin: PluginRecord) {
-        guard plugin.hostable, settings.effects.count < 16 else { return }
-        stop()
-        settings.effects.append(EffectSelection(pluginID: plugin.id))
-        status = "Effect added. Choose Controls to edit its settings."
+        guard !loading, plugin.hostable, settings.effects.count < 16 else { return }
+        editEffects { settings.effects.append(EffectSelection(pluginID: plugin.id)) }
+        if !loading { status = "Effect added. Choose Controls to edit its settings." }
         diagnostics.record(.effectAdded)
     }
 
     public func remove(_ id: UUID) {
-        stop()
-        settings.effects.removeAll { $0.id == id }
+        guard !loading, settings.effects.contains(where: { $0.id == id }) else { return }
+        editEffects { settings.effects.removeAll { $0.id == id } }
         diagnostics.record(.effectRemoved)
     }
     public func move(_ id: UUID, by offset: Int) {
-        guard offset != 0, let from = settings.effects.firstIndex(where: { $0.id == id }),
+        guard !loading, offset != 0, let from = settings.effects.firstIndex(where: { $0.id == id }),
               settings.effects.indices.contains(from + offset) else { return }
-        stop()
-        var effects = settings.effects
-        effects.insert(effects.remove(at: from), at: from + offset)
-        settings.effects = effects
+        editEffects {
+            var effects = settings.effects
+            effects.insert(effects.remove(at: from), at: from + offset)
+            settings.effects = effects
+        }
         diagnostics.record(.effectReordered)
     }
 
+    // Preserve only the currently active session's route. Explicit Stop, device
+    // changes and setup invalidate the generation before a queued restart runs.
+    // Bounded checks must never become an unbounded processing session.
+    private func editEffects(_ edit: () -> Void) {
+        let resume = running && resumesAfterEffectEdit && !setupActive && checkDeadline == nil
+        let monitorUID = privateRoute?.monitorUID
+        let monitor = monitorUID.flatMap { uid in devices.first { $0.uid == uid } }
+        stop()
+        edit()
+        guard resume else { return }
+        guard monitorUID == nil || monitor != nil else {
+            status = "The monitoring output is unavailable. Check devices before starting again."
+            return
+        }
+        let token = generation
+        loading = true
+        status = "Updating effects..."
+        Task { [weak self] in
+            guard let self, self.generation == token else { return }
+            self.loading = false
+            await self.startGraph(mutePhysicalOutput: false, referenceCapture: nil, monitor: monitor)
+        }
+    }
+
     public func stop(message: String = "Stopped. Your settings are saved.") {
-        if running || loading { diagnostics.record(.processingStopped) }
+        checkDeadline?.cancel()
+        checkDeadline = nil
+        resumesAfterEffectEdit = false
+        if running || loading || checkingInput { diagnostics.record(.processingStopped) }
         generation += 1
         loading = false
         if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
@@ -178,6 +246,7 @@ public final class AudioGraph: ObservableObject {
         editorRequests.clear()
         genericEditorID = nil
         running = false
+        checkingInput = false
         monitoring = false
         inputMeter.reset()
         outputMeter.reset()
@@ -189,9 +258,128 @@ public final class AudioGraph: ObservableObject {
         status = stateError ?? message
     }
 
-    public func start(mutePhysicalOutput: Bool = false, referenceCapture: ProbeCapture? = nil) async {
-        guard canStart, !running, !Task.isCancelled else { return }
-        await startGraph(mutePhysicalOutput: mutePhysicalOutput, referenceCapture: referenceCapture, monitor: nil)
+    // A sound check needs only the selected input. Disable output I/O before
+    // assigning the device: no virtual driver, effects or physical output are
+    // involved, and an input-only microphone never becomes an output device.
+    public func startInputCheck() async {
+        guard !running, !loading, !checkingInput, !Task.isCancelled,
+              let input = selectedInput, !input.isVirtual,
+              (0..<input.inputChannels).contains(selectedInputChannel) else { return }
+        stop()
+        loading = true
+        let token = generation
+        let channel = Int32(selectedInputChannel)
+        status = "Waiting for microphone permission…"
+        let allowed = await AVCaptureDevice.requestAccess(for: .audio)
+        guard token == generation else { return }
+        guard allowed, !Task.isCancelled else {
+            stop(message: allowed ? "Sound check cancelled." : "Allow microphone access in Privacy & Security → Microphone.")
+            return
+        }
+        let check = AVAudioEngine()
+        do {
+            try check.inputNode.withAudioUnit { unit in
+                guard let unit else { throw GraphError.message("Microphone audio unit is unavailable.") }
+                var disabled: UInt32 = 0
+                let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO,
+                    kAudioUnitScope_Output, 0, &disabled, UInt32(MemoryLayout<UInt32>.size))
+                guard result == noErr else { throw GraphError.message("Could not disable output for the sound check: \(result)") }
+                try setDevice(input.id, on: unit)
+                var map = channel
+                guard AudioUnitSetProperty(unit, kAudioOutputUnitProperty_ChannelMap, kAudioUnitScope_Input, 1,
+                    &map, UInt32(MemoryLayout<Int32>.size)) == noErr else {
+                    throw GraphError.message("Could not select the microphone channel.")
+                }
+            }
+            let hardware = check.inputNode.inputFormat(forBus: 0)
+            guard hardware.sampleRate > 0,
+                  let format = AVAudioFormat(standardFormatWithSampleRate: hardware.sampleRate, channels: 1) else {
+                throw GraphError.message("The microphone has no active audio stream.")
+            }
+            let meter = inputMeter
+            try check.inputNode.installAudioTap(onBus: 0, bufferSize: 256, format: format) { buffer, _ in
+                meter.write(buffer)
+            }
+            check.prepare()
+            try verifyInputCheck(check, input: input, channel: channel)
+            try Task.checkCancellation()
+            try check.start()
+            engine = check
+            checkingInput = true
+            loading = false
+            formatDescription = "Raw input · \(Int(format.sampleRate)) Hz · Channel \(channel + 1)"
+            status = "Listening for your sound check. No output or recording."
+            stopCheck(after: .seconds(5), message: "Five-second microphone check finished. Check again when you’re ready.")
+            observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: check, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.generation == token else { return }
+                    // Selecting the HAL device can enqueue a startup notification.
+                    // Keep the check only if the running engine still has the exact
+                    // input, channel, rate and disabled output that were verified.
+                    do {
+                        try self.verifyInputCheck(check, input: input, channel: channel)
+                        if check.isRunning { return }
+                        self.stop(message: "The microphone engine stopped during configuration. Start the sound check again when ready.")
+                    } catch {
+                        self.stop(message: "Microphone configuration changed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        } catch {
+            check.stop()
+            check.inputNode.removeTap(onBus: 0)
+            guard token == generation else { return }
+            stop(message: "Could not start sound check: \(error.localizedDescription)")
+        }
+    }
+
+    private func verifyInputCheck(_ check: AVAudioEngine, input: AudioDevice, channel: Int32) throws {
+        try check.inputNode.withAudioUnit { unit in
+            guard let unit else { throw GraphError.message("Microphone audio unit is unavailable.") }
+            var outputEnabled: UInt32 = 1
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            let result = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_EnableIO,
+                kAudioUnitScope_Output, 0, &outputEnabled, &size)
+            var map: Int32 = -1
+            var mapSize = UInt32(MemoryLayout<Int32>.size)
+            let mapResult = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_ChannelMap,
+                kAudioUnitScope_Input, 1, &map, &mapSize)
+            var currentDevice: AudioDeviceID = 0
+            var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let deviceResult = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global, 0, &currentDevice, &deviceSize)
+            guard deviceResult == noErr, deviceSize == MemoryLayout<AudioDeviceID>.size,
+                  result == noErr, size == MemoryLayout<UInt32>.size,
+                  mapResult == noErr, mapSize == MemoryLayout<Int32>.size else {
+                throw GraphError.message("Could not verify the microphone route. Check the device and try again.")
+            }
+            guard outputEnabled == 0 else {
+                throw GraphError.message("Output became enabled. The input-only check cannot continue.")
+            }
+            let client = check.inputNode.outputFormat(forBus: 0)
+            guard currentDevice == input.id, map == channel,
+                  client.channelCount == 1, client.sampleRate == input.sampleRate,
+                  DeviceRegistry.devices().contains(input) else {
+                throw GraphError.message("The microphone, channel or format changed. Choose the input again.")
+            }
+        }
+    }
+
+    public func start(mutePhysicalOutput: Bool = false, referenceCapture: ProbeCapture? = nil,
+                      maximumDuration: Duration? = nil) async {
+        guard !setupActive, canStart, !running, !Task.isCancelled else { return }
+        await startGraph(mutePhysicalOutput: mutePhysicalOutput, referenceCapture: referenceCapture, monitor: nil,
+            checkDuration: maximumDuration)
+    }
+
+    private func stopCheck(after duration: Duration, message: String) {
+        checkDeadline?.cancel()
+        let token = generation
+        checkDeadline = Task { [weak self] in
+            do { try await Task.sleep(for: duration) } catch { return }
+            guard let self, self.generation == token else { return }
+            self.stop(message: message)
+        }
     }
 
     // The caller must obtain explicit user confirmation for the named physical
@@ -199,12 +387,13 @@ public final class AudioGraph: ObservableObject {
     // is possible. Monitoring is never restored by normal start or persistence.
     public func startMonitoring(outputUID: String) async {
         diagnostics.record(.monitoringRequested)
-        guard !loading, let input = selectedInput, let output = selectedOutput,
+        guard !setupActive, !loading, let input = selectedInput, let output = selectedOutput,
               let monitor = devices.first(where: { $0.uid == outputUID }) else {
             status = "The selected monitoring output is unavailable."
             return
         }
-        do { _ = try PrivateAudioRoutePlan(input: input, output: output, monitor: monitor) }
+        do { _ = try PrivateAudioRoutePlan(input: input, output: output, monitor: monitor,
+            inputChannel: selectedInputChannel, outputChannel: selectedOutputChannel) }
         catch { status = error.localizedDescription; return }
         stop(message: "Restarting with monitoring…")
         await startGraph(mutePhysicalOutput: false, referenceCapture: nil, monitor: monitor)
@@ -215,7 +404,9 @@ public final class AudioGraph: ObservableObject {
         stop(message: "Monitoring stopped. Start processing again when ready.")
     }
 
-    private func startGraph(mutePhysicalOutput: Bool, referenceCapture: ProbeCapture?, monitor: AudioDevice?) async {
+    private func startGraph(mutePhysicalOutput: Bool, referenceCapture: ProbeCapture?, monitor: AudioDevice?,
+                            checkDuration: Duration? = nil,
+                            checkMessage: String = "Preview finished. Listen again when you’re ready.") async {
         guard canStart, !running, !Task.isCancelled else { return }
         if let routeIssue { status = routeIssue; return }
         stop()
@@ -235,38 +426,19 @@ public final class AudioGraph: ObservableObject {
         }
         guard let input = selectedInput, let output = selectedOutput else { loading = false; return }
         do {
-            let defaultInput = DeviceRegistry.defaultDevice(input: true)
-            let defaultOutput = DeviceRegistry.defaultDevice(input: false)
-            guard (monitor == nil && DeviceRegistry.supportsRoute(input: input.id, output: output.id,
-                defaultInput: defaultInput, defaultOutput: defaultOutput)) ||
-                PrivateAudioRoute.supports(input: input, output: output) else {
-                throw GraphError.message("Audio defaults changed. Choose the current default pair or one duplex device.")
-            }
             let graph = AVAudioEngine()
-            var route: PrivateAudioRoute?
-            // A cancelled AU load can outlive stop(). Keep its aggregate alive
-            // until this local engine has been stopped, even before publication.
+            // Every route has explicit maps, including a same-device duplex
+            // route. Never rely on whichever channels the system defaults expose.
+            let route = try PrivateAudioRoute(input: input, output: output, monitor: monitor,
+                inputChannel: selectedInputChannel, outputChannel: selectedOutputChannel)
             defer { withExtendedLifetime(route) { if !graph.isRunning { graph.stop() } } }
-            // The default engine can use Apple's private aggregate for the default I/O pair.
-            // Reassigning that AUHAL to a one-direction-only device is invalid (-10851).
-            usesDefaultRoute = monitor == nil && input.id == defaultInput && output.id == defaultOutput
-            if !usesDefaultRoute {
-                _ = graph.inputNode
-                if input.id != output.id || monitor != nil {
-                    let aggregate = try PrivateAudioRoute(input: input, output: output, monitor: monitor)
-                    route = aggregate
-                    try graph.inputNode.withAudioUnit {
-                        try setDevice(aggregate.id, on: $0)
-                        try aggregate.configureMicrophone(on: $0)
-                    }
-                } else {
-                    // Set the shared AUHAL once for a same-device duplex route.
-                    try graph.outputNode.withAudioUnit { try setDevice(output.id, on: $0) }
-                }
+            _ = graph.inputNode
+            try graph.inputNode.withAudioUnit {
+                try setDevice(route.id, on: $0)
+                try route.configureMicrophone(on: $0)
             }
             let hardwareFormat = graph.inputNode.inputFormat(forBus: 0)
-            guard let format = route == nil ? graph.inputNode.outputFormat(forBus: 0)
-                : AVAudioFormat(standardFormatWithSampleRate: hardwareFormat.sampleRate, channels: 1) else {
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: hardwareFormat.sampleRate, channels: 1) else {
                 throw GraphError.message("Input has no valid mono audio format.")
             }
             guard format.sampleRate > 0, format.channelCount > 0 else { throw GraphError.message("Input has no active audio stream.") }
@@ -300,12 +472,12 @@ public final class AudioGraph: ObservableObject {
             graph.attach(outputMeterNode)
             try graph.connectNode(previous, to: outputMeterNode, format: format)
             try graph.connectNode(outputMeterNode, to: graph.mainMixerNode, format: format)
-            if monitor != nil {
+            do {
                 guard let stereo = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 2) else {
                     throw GraphError.message("Monitoring has no valid stereo client format.")
                 }
                 try graph.connectNode(graph.mainMixerNode, to: graph.outputNode, format: stereo)
-                try graph.outputNode.withAudioUnit { try route?.configureOutputs(on: $0) }
+                try graph.outputNode.withAudioUnit { try route.configureOutputs(on: $0) }
             }
             graph.mainMixerNode.outputVolume = mutePhysicalOutput ? 0 : 1
             let inMeter = inputMeter, outMeter = outputMeter
@@ -328,11 +500,11 @@ public final class AudioGraph: ObservableObject {
                 }
             }
             try Task.checkCancellation()
-            if usesDefaultRoute && (input.id != DeviceRegistry.defaultDevice(input: true) || output.id != DeviceRegistry.defaultDevice(input: false)) {
-                throw GraphError.message("Audio defaults changed while loading effects. Check devices and start again.")
-            }
             try graph.start()
+            // Measurement sessions must not be restarted as audible routes.
+            resumesAfterEffectEdit = !mutePhysicalOutput && referenceCapture == nil && checkDuration == nil
             running = true; loading = false
+            if let checkDuration { stopCheck(after: checkDuration, message: checkMessage) }
             monitoring = monitor != nil
             diagnostics.record(.processingStarted)
             formatDescription = "\(Int(format.sampleRate)) Hz · input buffer \(input.bufferFrames) frames · \(format.channelCount) ch"
@@ -444,7 +616,7 @@ public final class AudioGraph: ObservableObject {
 
     private func poll() {
         let now = ProcessInfo.processInfo.systemUptime
-        if running {
+        if running || checkingInput {
             let elapsed = max(0, now - lastMeterPoll)
             let input = inputBallistics.update(rms: inputMeter.rms,
                 samplePeak: inputMeter.takePeak(), elapsed: elapsed)
@@ -456,10 +628,6 @@ public final class AudioGraph: ObservableObject {
         lastMeterPoll = now
         if deviceScan.isDue(now: now) {
             let updated = DeviceRegistry.devices()
-            if running && usesDefaultRoute && (selectedInput?.id != DeviceRegistry.defaultDevice(input: true) || selectedOutput?.id != DeviceRegistry.defaultDevice(input: false)) {
-                diagnostics.record(.configurationChanged)
-                stop(message: "System audio defaults changed. Check your selected devices and start again.")
-            }
             if running && (!updated.contains { $0.uid == settings.inputUID && $0.inputChannels > 0 } || !updated.contains { $0.uid == settings.outputUID && $0.outputChannels > 0 }) {
                 diagnostics.record(.deviceDisconnected)
                 stop(message: "A selected device disconnected. Reconnect it or choose another device.")
@@ -469,11 +637,24 @@ public final class AudioGraph: ObservableObject {
                 diagnostics.record(.deviceDisconnected)
                 stop(message: "The monitoring output disconnected. Check devices and start again.")
             }
-            if updated != devices { devices = updated }
+            if checkingInput && !updated.contains(where: {
+                $0.uid == settings.inputUID && $0.inputChannels > selectedInputChannel &&
+                $0 == selectedInput
+            }) {
+                stop(message: "Microphone disconnected or changed. Choose an input and check again.")
+            }
+            if updated != devices {
+                if running, let privateRoute {
+                    do { try privateRoute.verifyDevices() }
+                    catch { stop(message: "Selected audio topology changed. Check channels and start again.") }
+                }
+                devices = updated
+            }
         }
     }
 
     private func save() {
+        guard persistsSettings else { return }
         do { defaults.set(try JSONEncoder().encode(settings), forKey: "session") }
         catch {
             diagnostics.record(.stateSaveFailed, code: (error as NSError).code)

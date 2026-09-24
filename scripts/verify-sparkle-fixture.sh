@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPARKLE_BIN="$ROOT/.build/artifacts/sparkle/Sparkle/bin"
 GENERATE_APPCAST="$SPARKLE_BIN/generate_appcast"
 SIGN_UPDATE="$SPARKLE_BIN/sign_update"
+BINARY_DELTA="$SPARKLE_BIN/BinaryDelta"
 
 # RFC 8032 test vector 1. This seed is public test data with no production
 # security value. Every Sparkle invocation receives it over stdin so this test
@@ -12,7 +13,7 @@ SIGN_UPDATE="$SPARKLE_BIN/sign_update"
 PUBLIC_TEST_SEED='nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A='
 PUBLIC_TEST_KEY='11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo='
 WRONG_PUBLIC_TEST_SEED='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
-DOWNLOAD_PREFIX='https://updates.example.invalid/micline/'
+DOWNLOAD_PREFIX='https://github.com/thesammykins/micline/releases/download/v1.1.0/'
 
 die() {
     printf 'error: %s\n' "$*" >&2
@@ -24,6 +25,7 @@ for command_name in ditto plutil python3 stat xmllint; do
 done
 [[ -x "$GENERATE_APPCAST" ]] || die "build MicLine first to materialize Sparkle's generate_appcast tool"
 [[ -x "$SIGN_UPDATE" ]] || die "build MicLine first to materialize Sparkle's sign_update tool"
+[[ -x "$BINARY_DELTA" ]] || die "build MicLine first to materialize Sparkle's BinaryDelta tool"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/micline-sparkle-fixture.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
@@ -68,6 +70,23 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 printf '#!/bin/sh\nexit 0\n' > "$APP/Contents/MacOS/MicLineFixture"
 chmod 0755 "$APP/Contents/MacOS/MicLineFixture"
+# Stable incompressible content makes a small version change worth a delta.
+mkdir -p "$APP/Contents/Resources" "$WORK_DIR/previous"
+python3 - "$APP/Contents/Resources/payload" <<'PY'
+from pathlib import Path
+import random
+import sys
+Path(sys.argv[1]).write_bytes(random.Random(8032).randbytes(1024 * 1024))
+PY
+OLD_APP="$WORK_DIR/previous/MicLineFixture.app"
+ditto "$APP" "$OLD_APP"
+plutil -replace CFBundleVersion -string 1 "$OLD_APP/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string 1.0.0 "$OLD_APP/Contents/Info.plist"
+ditto -c -k --sequesterRsrc --keepParent "$OLD_APP" "$UPDATES/MicLineFixture-1.0.0.zip"
+printf '%s\n' "$PUBLIC_TEST_SEED" | "$GENERATE_APPCAST" --ed-key-file - \
+    --download-url-prefix 'https://github.com/thesammykins/micline/releases/download/v1.0.0/' \
+    "$UPDATES" >/dev/null
+cp "$APPCAST" "$WORK_DIR/previous-appcast.xml"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
 
 generate_output="$(
@@ -76,11 +95,15 @@ generate_output="$(
         "$GENERATE_APPCAST" \
             --ed-key-file - \
             --download-url-prefix "$DOWNLOAD_PREFIX" \
-            --maximum-deltas 0 \
+            --maximum-deltas 1 \
             "$UPDATES"
 )"
 [[ "$generate_output" != *"does not match"* ]] || die "fixture app and signing key do not match"
 [[ -f "$APPCAST" ]] || die "generate_appcast did not create appcast.xml"
+python3 "$ROOT/scripts/prepare-release-feed.py" "$APPCAST" "$UPDATES" v1.1.0 2 "$WORK_DIR/previous-appcast.xml"
+printf '%s\n' "$PUBLIC_TEST_SEED" | "$SIGN_UPDATE" --ed-key-file - "$APPCAST" >/dev/null
+old_url="$(xmllint --xpath "string(//item[*[local-name()='version']='1']/enclosure/@url)" "$APPCAST")"
+[[ "$old_url" == 'https://github.com/thesammykins/micline/releases/download/v1.0.0/MicLineFixture-1.0.0.zip' ]] || die "previous release URL was rewritten"
 xmllint --noout "$APPCAST"
 
 verify_with_seed() {
@@ -119,6 +142,22 @@ minimum_system_version="$(xmllint --xpath \
 verify_with_seed "$PUBLIC_TEST_SEED" "$APPCAST" >/dev/null
 verify_with_seed "$PUBLIC_TEST_SEED" "$ARCHIVE" "$archive_signature" >/dev/null
 printf 'verified: signed appcast and archive\n'
+
+delta_url="$(xmllint --xpath "string(//*[local-name()='deltas']/*[local-name()='enclosure']/@url)" "$APPCAST")"
+delta_signature="$(xmllint --xpath "string(//*[local-name()='deltas']/*[local-name()='enclosure']/@*[local-name()='edSignature'])" "$APPCAST")"
+delta_from="$(xmllint --xpath "string(//*[local-name()='deltas']/*[local-name()='enclosure']/@*[local-name()='deltaFrom'])" "$APPCAST")"
+delta_length="$(xmllint --xpath "string(//*[local-name()='deltas']/*[local-name()='enclosure']/@length)" "$APPCAST")"
+[[ "$delta_from" == "1" && "$delta_url" == "${DOWNLOAD_PREFIX}"*.delta ]] || die "expected a delta from build 1"
+DELTA="$UPDATES/$(basename "$delta_url")"
+[[ -n "$delta_signature" && "$delta_length" == "$(stat -f %z "$DELTA")" ]] || die "delta signature or length is missing or incorrect"
+verify_with_seed "$PUBLIC_TEST_SEED" "$DELTA" "$delta_signature" >/dev/null
+"$BINARY_DELTA" apply "$OLD_APP" "$WORK_DIR/patched.app" "$DELTA"
+diff -r "$APP" "$WORK_DIR/patched.app"
+expect_rejection "wrong delta signing key" "$WRONG_PUBLIC_TEST_SEED" "$DELTA" "$delta_signature"
+cp "$DELTA" "$WORK_DIR/tampered.delta"
+printf 'tampered' >> "$WORK_DIR/tampered.delta"
+expect_rejection "tampered delta" "$PUBLIC_TEST_SEED" "$WORK_DIR/tampered.delta" "$delta_signature"
+printf 'verified: signed delta reconstructs the new app; full archive remains available\n'
 
 UNSIGNED_APPCAST="$WORK_DIR/unsigned-appcast.xml"
 cat > "$UNSIGNED_APPCAST" <<'EOF'

@@ -41,6 +41,7 @@ struct EffectRow: View {
     var body: some View {
         rowContent
         .opacity(draggingID == effect.id ? 0.42 : 1)
+        .disabled(graph.loading || graph.setupActive)
         .padding(.vertical, 10)
         .background {
             GeometryReader { geometry in
@@ -123,9 +124,9 @@ struct EffectRow: View {
                     .contentShape(Rectangle())
             }
                 .buttonStyle(.borderless)
-                .help("Remove \(name) from the effects chain. Processing stops before the chain changes.")
+                .help("Remove \(name) from the effects chain. Processing resumes after the chain changes.")
                 .accessibilityLabel("Remove \(name)")
-                .accessibilityHint("Stops processing and removes this effect from the chain.")
+                .accessibilityHint("Removes this effect and resumes processing if it was running.")
         }
         .buttonStyle(.bordered)
     }
@@ -258,7 +259,7 @@ private struct EffectReorderGrip: View {
             Button("Move Earlier") { move(-1) }.disabled(!canMoveEarlier)
             Button("Move Later") { move(1) }.disabled(!canMoveLater)
         }
-        .help("Drag to reorder \(name). When focused, press Option–Up or Option–Down.")
+        .help("Drag to reorder \(name). When focused, press Option-Up or Option-Down.")
         .accessibilityElement()
         .accessibilityLabel("Reorder \(name)")
         .accessibilityValue("Position \(position) of \(total)")
@@ -336,7 +337,7 @@ struct EffectLibraryView: View {
                         }
                         .disabled(graph.loading || graph.settings.effects.count >= 16)
                         .accessibilityLabel("Add \(plugin.name)")
-                        .accessibilityHint("Stops processing and adds this effect at the end of the chain.")
+                        .accessibilityHint("Adds this effect at the end of the chain and resumes processing if it was running.")
                         .help("Add \(plugin.name) at the end of the effects chain.")
                     }
                     .padding(.vertical, 4)

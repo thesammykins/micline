@@ -7,37 +7,42 @@ struct PrivateAudioRoutePlan {
     let memberUIDs: [String]
     let mainUID: String
     let driftByUID: [String: UInt32]
-    let microphoneChannel: Int32 = 0
-    let outputChannelMap: [Int32]?
+    let microphoneChannel: Int32
+    let outputChannelMap: [Int32]
 
-    init(input: AudioDevice, output: AudioDevice, monitor: AudioDevice?) throws {
-        guard PrivateAudioRoute.supports(input: input, output: output) else {
-            throw GraphError.message("Monitoring requires the supported physical-microphone to virtual-output route.")
+    init(input: AudioDevice, output: AudioDevice, monitor: AudioDevice?,
+         inputChannel: Int = 0, outputChannel: Int = 0) throws {
+        guard PrivateAudioRoute.supports(input: input, output: output),
+              (0..<input.inputChannels).contains(inputChannel),
+              outputChannel >= 0, outputChannel < output.outputChannels,
+              output.outputChannels == 1 || outputChannel + 1 < output.outputChannels else {
+            throw GraphError.message("Choose an available microphone channel and output channel pair.")
         }
         if let monitor {
             guard !monitor.isVirtual, monitor.outputChannels == 2,
-                  monitor.sampleRate == output.sampleRate,
+                  monitor.sampleRate.isFinite, monitor.sampleRate > 0,
                   monitor.uid != input.uid, monitor.uid != output.uid else {
-                throw GraphError.message("Monitoring requires a distinct physical stereo output at the route sample rate.")
+                throw GraphError.message("Monitoring requires a distinct physical stereo output.")
             }
         }
         self.monitor = monitor
-        members = [input, output] + (monitor.map { [$0] } ?? [])
+        // A duplex device appears once. Stream offsets include every member's
+        // channels, including the microphone interface's unused outputs.
+        members = [input] + (input.uid == output.uid ? [] : [output]) + (monitor.map { [$0] } ?? [])
         memberUIDs = members.map(\.uid)
         mainUID = output.uid
         driftByUID = Dictionary(uniqueKeysWithValues: members.map { ($0.uid, $0.uid == output.uid ? 0 : 1) })
+        microphoneChannel = Int32(inputChannel)
+        let outputOffset = members.prefix { $0.uid != output.uid }.reduce(0) { $0 + $1.outputChannels }
+        var map = [Int32](repeating: -1, count: members.reduce(0) { $0 + $1.outputChannels })
+        map[outputOffset + outputChannel] = 0
+        if output.outputChannels > 1 { map[outputOffset + outputChannel + 1] = 1 }
         if let monitor {
-            let outputOffset = members.prefix { $0.uid != output.uid }.reduce(0) { $0 + $1.outputChannels }
             let monitorOffset = members.prefix { $0.uid != monitor.uid }.reduce(0) { $0 + $1.outputChannels }
-            var map = [Int32](repeating: -1, count: members.reduce(0) { $0 + $1.outputChannels })
-            map[outputOffset] = 0
-            map[outputOffset + 1] = 1
             map[monitorOffset] = 0
             map[monitorOffset + 1] = 1
-            outputChannelMap = map
-        } else {
-            outputChannelMap = nil
         }
+        outputChannelMap = map
     }
 }
 
@@ -49,12 +54,17 @@ final class PrivateAudioRoute {
     private let plan: PrivateAudioRoutePlan
 
     static func supports(input: AudioDevice, output: AudioDevice) -> Bool {
-        !input.isVirtual && input.inputChannels == 1 && input.outputChannels == 0 &&
-        output.isVirtual && output.outputChannels == 2 && input.sampleRate == output.sampleRate
+        !input.isVirtual && input.inputChannels > 0 && input.inputChannels <= 256 &&
+        input.outputChannels >= 0 && input.outputChannels <= 256 &&
+        output.outputChannels > 0 && output.outputChannels <= 256 &&
+        input.sampleRate.isFinite && input.sampleRate > 0 &&
+        output.sampleRate.isFinite && output.sampleRate > 0
     }
 
-    init(input: AudioDevice, output: AudioDevice, monitor: AudioDevice? = nil) throws {
-        let plan = try PrivateAudioRoutePlan(input: input, output: output, monitor: monitor)
+    init(input: AudioDevice, output: AudioDevice, monitor: AudioDevice? = nil,
+         inputChannel: Int = 0, outputChannel: Int = 0) throws {
+        let plan = try PrivateAudioRoutePlan(input: input, output: output, monitor: monitor,
+            inputChannel: inputChannel, outputChannel: outputChannel)
         self.plan = plan
         let subdevices: [[String: Any]] = plan.members.map { device in
             var description: [String: Any] = [
@@ -115,12 +125,13 @@ final class PrivateAudioRoute {
         let devices = DeviceRegistry.devices()
         let current = plan.memberUIDs.compactMap { uid in devices.first { $0.uid == uid } }
         guard activeUIDs == Set(plan.memberUIDs), ownedUIDs == activeUIDs,
-              current.count == plan.members.count, current == plan.members,
-              (try? PrivateAudioRoutePlan(input: current[0], output: current[1], monitor: current.count == 3 ? current[2] : nil).memberUIDs) == plan.memberUIDs else {
+              current.count == plan.members.count, current == plan.members else {
             throw GraphError.message("Selected devices changed while configuring the private route.")
         }
         let expectedOutputs = plan.members.reduce(0) { $0 + $1.outputChannels }
-        guard channels(id, scope: kAudioDevicePropertyScopeOutput) == expectedOutputs else {
+        let expectedInputs = plan.members.reduce(0) { $0 + $1.inputChannels }
+        guard channels(id, scope: kAudioDevicePropertyScopeOutput) == expectedOutputs,
+              channels(id, scope: kAudioDevicePropertyScopeInput) == expectedInputs else {
             throw GraphError.message("Private-route output topology differs from the selected devices.")
         }
     }
@@ -135,14 +146,14 @@ final class PrivateAudioRoute {
     }
 
     func configureOutputs(on unit: AudioUnit?) throws {
-        guard let map = plan.outputChannelMap else { return }
+        let map = plan.outputChannelMap
         guard let unit else { throw GraphError.message("Private-route output audio unit is unavailable.") }
         try verifyDevices()
         let result = map.withUnsafeBytes {
             AudioUnitSetProperty(unit, kAudioOutputUnitProperty_ChannelMap, kAudioUnitScope_Output, 0,
                 $0.baseAddress, UInt32($0.count))
         }
-        guard result == noErr else { throw GraphError.message("Could not configure monitoring outputs: \(result)") }
+        guard result == noErr else { throw GraphError.message("Could not isolate the selected output channels: \(result)") }
     }
 
     func verifyMaps(inputUnit: AudioUnit?, outputUnit: AudioUnit?) throws {
@@ -156,7 +167,7 @@ final class PrivateAudioRoute {
               channel == plan.microphoneChannel else {
             throw GraphError.message("Microphone channel mapping was not preserved; refusing possible loopback feedback.")
         }
-        guard let expected = plan.outputChannelMap else { return }
+        let expected = plan.outputChannelMap
         guard let outputUnit else { throw GraphError.message("Private-route output audio unit is unavailable.") }
         var actual = [Int32](repeating: -1, count: expected.count)
         var outputSize = UInt32(actual.count * MemoryLayout<Int32>.size)
@@ -166,7 +177,7 @@ final class PrivateAudioRoute {
         }
         guard outputResult == noErr, outputSize == actual.count * MemoryLayout<Int32>.size,
               actual == expected else {
-            throw GraphError.message("Monitoring output mapping was not preserved; refusing to start.")
+            throw GraphError.message("Output channel mapping was not preserved; refusing to start.")
         }
     }
 

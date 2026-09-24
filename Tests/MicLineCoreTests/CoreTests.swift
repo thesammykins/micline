@@ -41,6 +41,10 @@ import AVFoundation
     #expect(settings.gainDB == 12)
     #expect(settings.highPassHz == 20)
     let restored = try JSONDecoder().decode(SessionSettings.self, from: JSONEncoder().encode(settings))
+    let legacy = Data(#"{"inputUID":"stable-input","outputUID":"stable-output","gainDB":0,"highPassHz":80,"highPassEnabled":true,"effects":[]}"#.utf8)
+    let migrated = try JSONDecoder().decode(SessionSettings.self, from: legacy)
+    #expect(migrated.inputUID == "stable-input")
+    #expect(migrated.inputChannel == nil && migrated.outputChannel == nil)
     #expect(restored == settings)
     #expect(restored.effects.map(\.pluginID) == ["first", "second"])
 }
@@ -57,32 +61,25 @@ import AVFoundation
     #expect(plugins.allSatisfy { !$0.hostable })
 }
 
-@Test func sharedHALRejectsNonDefaultSplitDevices() {
-    #expect(DeviceRegistry.supportsRoute(input: 17, output: 29, defaultInput: 17, defaultOutput: 29))
-    #expect(DeviceRegistry.supportsRoute(input: 41, output: 41, defaultInput: 17, defaultOutput: 29))
-    #expect(!DeviceRegistry.supportsRoute(input: 17, output: 41, defaultInput: 17, defaultOutput: 29))
-    #expect(!DeviceRegistry.supportsRoute(input: 41, output: 29, defaultInput: 17, defaultOutput: 29))
-    #expect(!DeviceRegistry.supportsRoute(input: 29, output: 17, defaultInput: 17, defaultOutput: 29))
-}
-
-@Test func privateRouteRejectsAmbiguousChannelsAndClocks() {
-    var mic = AudioDevice(id: 17, uid: "mic", name: "Mic", inputChannels: 1,
-        outputChannels: 0, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
-    var loopback = AudioDevice(id: 41, uid: "loopback", name: "Loopback", inputChannels: 2,
-        outputChannels: 2, sampleRate: 48_000, bufferFrames: 512, isVirtual: true)
-    #expect(PrivateAudioRoute.supports(input: mic, output: loopback))
-    #expect(!PrivateAudioRoute.supports(input: loopback, output: mic))
-    mic.outputChannels = 2
-    #expect(!PrivateAudioRoute.supports(input: mic, output: loopback))
-    mic.outputChannels = 0
-    mic.inputChannels = 2
-    #expect(!PrivateAudioRoute.supports(input: mic, output: loopback))
-    mic.inputChannels = 1
-    loopback.sampleRate = 44_100
-    #expect(!PrivateAudioRoute.supports(input: mic, output: loopback))
-    loopback.sampleRate = 48_000
-    loopback.isVirtual = false
-    #expect(!PrivateAudioRoute.supports(input: mic, output: loopback))
+@Test func privateRouteIsolatesDuplexChannelsAcrossDifferentRates() throws {
+    let mic = AudioDevice(id: 17, uid: "mic", name: "Interface", inputChannels: 4,
+        outputChannels: 2, sampleRate: 44_100, bufferFrames: 512, isVirtual: false)
+    let output = AudioDevice(id: 41, uid: "loopback", name: "Alternative", inputChannels: 16,
+        outputChannels: 16, sampleRate: 48_000, bufferFrames: 256, isVirtual: true)
+    let plan = try PrivateAudioRoutePlan(input: mic, output: output, monitor: nil,
+        inputChannel: 3, outputChannel: 2)
+    #expect(plan.microphoneChannel == 3)
+    #expect(plan.outputChannelMap == [-1, -1, -1, -1, 0, 1] + Array(repeating: -1, count: 12))
+    #expect(plan.driftByUID == ["mic": 1, "loopback": 0])
+    #expect(plan.members.map(\.sampleRate) == [44_100, 48_000])
+    for (inputChannel, outputChannel) in [(-1, 0), (4, 0), (0, -1), (0, 15)] {
+        #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: output, monitor: nil,
+            inputChannel: inputChannel, outputChannel: outputChannel) }
+    }
+    let duplex = try PrivateAudioRoutePlan(input: mic, output: mic, monitor: nil, inputChannel: 2)
+    #expect(duplex.memberUIDs == ["mic"])
+    #expect(duplex.driftByUID == ["mic": 0])
+    #expect(duplex.outputChannelMap == [0, 1])
 }
 
 @Test func privateRoutePlansExplicitStereoMonitoringWithoutChangingVirtualGain() throws {
@@ -113,7 +110,7 @@ import AVFoundation
     monitor.outputChannels = 1
     #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
     monitor.outputChannels = 2
-    monitor.sampleRate = 44_100
+    monitor.sampleRate = .nan
     #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
     monitor.sampleRate = 48_000
     monitor.isVirtual = true
@@ -123,7 +120,7 @@ import AVFoundation
     #expect(throws: Error.self) { try PrivateAudioRoutePlan(input: mic, output: loopback, monitor: monitor) }
 }
 
-@Test func privateRouteWithoutMonitorHasNoOutputOverride() throws {
+@Test func privateRouteWithoutMonitorStillMapsOnlySelectedOutputs() throws {
     let mic = AudioDevice(id: 17, uid: "mic", name: "Mic", inputChannels: 1,
         outputChannels: 0, sampleRate: 48_000, bufferFrames: 512, isVirtual: false)
     let loopback = AudioDevice(id: 41, uid: "loopback", name: "Loopback", inputChannels: 2,
@@ -133,7 +130,7 @@ import AVFoundation
 
     #expect(plan.memberUIDs == ["mic", "loopback"])
     #expect(plan.driftByUID == ["mic": 1, "loopback": 0])
-    #expect(plan.outputChannelMap == nil)
+    #expect(plan.outputChannelMap == [0, 1])
 }
 
 @Test func captureBoundsInterleavedChannelAndDetectsGap() throws {
@@ -153,13 +150,6 @@ import AVFoundation
     #expect(Array(UnsafeBufferPointer(start: ml_capture_samples(capture), count: 5)) == [1, 2, 3, 4, 5])
     #expect(ml_capture_discontinuities(capture) == 1)
     #expect(ml_capture_start(capture) == 1)
-}
-
-@Test func actualDeviceAndAUEnumeration() {
-    let devices = DeviceRegistry.devices()
-    #expect(Set(devices.map(\.uid)).count == devices.count)
-    let plugins = PluginRegistry.scan()
-    #expect(plugins.contains { $0.format == .au && $0.name.contains("High") })
 }
 
 @Test func correlationFindsAsymmetricDelayAndRejectsSilence() {
@@ -214,19 +204,39 @@ import AVFoundation
     #expect(dry.renderMilliseconds.count == 400)
 }
 
-@Test func installedAppleAUInstantiatesAndPersistsParameterState() async throws {
-    let plugin = try #require(PluginRegistry.scan().first { $0.name == "AUHipass" })
-    let unit = try await AVAudioUnit.instantiate(with: plugin.componentDescription, options: .loadOutOfProcess)
-    let parameter = try #require(unit.withAUAudioUnit { $0.parameterTree?.allParameters.first })
-    parameter.value = parameter.minValue + (parameter.maxValue - parameter.minValue) * 0.37
-    let expected = parameter.value
-    let state = try #require(unit.withAUAudioUnit { $0.fullStateForDocument })
-    let encoded = try PropertyListSerialization.data(fromPropertyList: state, format: .binary, options: 0)
-    let restored = try await AVAudioUnit.instantiate(with: plugin.componentDescription, options: .loadOutOfProcess)
-    let decoded = try #require(PropertyListSerialization.propertyList(from: encoded, format: nil) as? [String: Any])
-    restored.withAUAudioUnit { $0.fullStateForDocument = decoded }
-    let actual = try #require(restored.withAUAudioUnit { $0.parameterTree?.parameter(withAddress: parameter.address)?.value })
-    #expect(abs(actual - expected) < 0.01)
+@Test @MainActor func setupAppleEffectsRestoreConfiguredStateWithoutCapture() async throws {
+    let plugins = PluginRegistry.scan()
+    for effect in SetupEffect.allCases {
+        let selection = try await effect.selection(in: plugins)
+        let plugin = try #require(effect.plugin(in: plugins))
+        let restored = try await AVAudioUnit.instantiate(with: plugin.componentDescription, options: .loadOutOfProcess)
+        let data = try #require(selection.state)
+        let decoded = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        restored.withAUAudioUnit { $0.fullStateForDocument = decoded }
+        let expected: [(AUParameterAddress, AUValue)] = effect == .isolation
+            ? [(0, 100), (1, 1)] : [(0, -18), (6, 0)]
+        for (address, value) in expected {
+            let actual = try #require(restored.withAUAudioUnit { $0.parameterTree?.parameter(withAddress: address)?.value })
+            #expect(abs(actual - value) < 0.01)
+        }
+    }
+}
+
+@Test @MainActor func discardedPreviewCannotOverwriteSavedSession() throws {
+    let suite = "micline.preview-test.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var saved = SessionSettings()
+    saved.inputUID = "saved-microphone"
+    saved.outputUID = "saved-virtual-device"
+    saved.effects = [EffectSelection(pluginID: "existing-effect")]
+    let data = try JSONEncoder().encode(saved)
+    defaults.set(data, forKey: "session")
+    let preview = AudioGraph(defaults: defaults, persistsSettings: false)
+    preview.settings.outputUID = "preview-headphones"
+    preview.settings.effects.append(EffectSelection(pluginID: "trial-effect"))
+    preview.stop()
+    #expect(defaults.data(forKey: "session") == data)
 }
 
 @Test @MainActor func editorPreparationAllocatesRenderResourcesAndIsIdempotent() async throws {

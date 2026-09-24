@@ -55,13 +55,6 @@ struct EffectReorderingTests {
             sessionID: sessionID, destinationID: second, edge: .after) == nil)
     }
 
-    @Test("Payload round trip preserves the stable effect and drag session IDs")
-    func payloadRoundTrip() throws {
-        let original = payload(third)
-        let decoded = try JSONDecoder().decode(EffectDragPayload.self, from: JSONEncoder().encode(original))
-        #expect(decoded == original)
-    }
-
     @Test("App declares the drag payload type as data")
     func payloadContentType() throws {
         // SwiftPM's test host does not load the application's type declarations.

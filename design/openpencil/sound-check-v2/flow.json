@@ -1,0 +1,438 @@
+[
+  {
+    "id": "welcome",
+    "chapter": 0,
+    "title": "A little sound check.",
+    "body": "We’ll help your voice come through clearly. You can skip any lesson.",
+    "control": "welcome",
+    "primary": "Set up my mic",
+    "next": "permission",
+    "lesson": "See what we’ll do",
+    "secondary": [
+      "I know my setup",
+      "main"
+    ]
+  },
+  {
+    "id": "permission",
+    "chapter": 0,
+    "title": "First, let MicLine listen.",
+    "body": "Microphone access lets us check your level. Nothing starts until you choose it.",
+    "control": "permission",
+    "primary": "Allow microphone",
+    "next": "mic",
+    "lesson": "Why we ask",
+    "secondary": [
+      "Set up later",
+      "main"
+    ],
+    "branch": [
+      "Permission denied",
+      "denied"
+    ]
+  },
+  {
+    "id": "mic",
+    "chapter": 0,
+    "title": "Which mic is yours?",
+    "body": "Choose the microphone you speak into. The output comes later.",
+    "control": "mic",
+    "primary": "Use this microphone",
+    "next": "listen",
+    "lesson": "Find your microphone",
+    "secondary": [
+      "Set up later",
+      "main"
+    ]
+  },
+  {
+    "id": "listen",
+    "chapter": 0,
+    "title": "Try your everyday voice.",
+    "body": "Say a sentence as if you’re talking to a friend.",
+    "control": "idle",
+    "primary": "Start sound check",
+    "next": "gain",
+    "lesson": "Watch a level check",
+    "secondary": [
+      "Skip sound check",
+      "noise"
+    ],
+    "detail": "Input only. No effects, output or recording."
+  },
+  {
+    "id": "gain",
+    "chapter": 0,
+    "title": "Leave a little headroom.",
+    "body": "Now try the loudest voice you expect to use.",
+    "control": "meter",
+    "primary": "This level works",
+    "next": "noise",
+    "lesson": "Understand the peak marker",
+    "secondary": [
+      "Stop and continue",
+      "noise"
+    ],
+    "branch": [
+      "Input clipped",
+      "clipped"
+    ],
+    "extra": [
+      "No signal",
+      "silent"
+    ],
+    "detail": "LISTENING · Raw input · Stop ends this check"
+  },
+  {
+    "id": "noise",
+    "chapter": 1,
+    "title": "Less room. More you.",
+    "body": "Try Apple’s Sound Isolation to soften background noise.",
+    "control": "isolation",
+    "primary": "Preview sound isolation",
+    "next": "audition",
+    "lesson": "Find Apple’s sound isolation",
+    "clip": "find-isolation",
+    "secondary": [
+      "Keep my natural sound",
+      "compressor"
+    ],
+    "branch": [
+      "Effect unavailable",
+      "unavailable"
+    ]
+  },
+  {
+    "id": "audition",
+    "chapter": 1,
+    "title": "Listen through headphones.",
+    "body": "Choose headphones before hearing your processed voice.",
+    "control": "headphones",
+    "primary": "Use these headphones",
+    "next": "compare",
+    "lesson": "Compare without feedback",
+    "secondary": [
+      "Skip listening",
+      "compressor"
+    ]
+  },
+  {
+    "id": "compare",
+    "chapter": 1,
+    "title": "Keep the version you prefer.",
+    "body": "Speak, then pause. Switch between the two and listen for a natural voice.",
+    "control": "compare",
+    "primary": "Keep sound isolation",
+    "next": "compressor",
+    "lesson": "Find Apple’s sound isolation",
+    "clip": "find-isolation",
+    "secondary": [
+      "Undo this effect",
+      "compressor"
+    ],
+    "detail": "HEADPHONE PREVIEW · Nothing sent to a call"
+  },
+  {
+    "id": "compressor",
+    "chapter": 1,
+    "title": "Soften the louder words.",
+    "body": "A gentle compressor helps loud and quiet phrases sit closer together.",
+    "control": "compressor",
+    "primary": "Try gentle compression",
+    "next": "compression",
+    "lesson": "Find Apple’s compressor",
+    "clip": "find-compressor",
+    "secondary": [
+      "Skip compression",
+      "output"
+    ]
+  },
+  {
+    "id": "compression",
+    "chapter": 1,
+    "title": "Still sounds like you?",
+    "body": "Try a quiet sentence, then a louder one. Keep it only if you prefer it.",
+    "control": "compression",
+    "primary": "Keep this sound",
+    "next": "output",
+    "lesson": "Find Apple’s compressor",
+    "clip": "find-compressor",
+    "secondary": [
+      "Undo compression",
+      "output"
+    ],
+    "detail": "HEADPHONE PREVIEW · Recheck output peaks"
+  },
+  {
+    "id": "output",
+    "chapter": 2,
+    "title": "Where should your voice go?",
+    "body": "A virtual audio device carries your processed voice into other apps.",
+    "control": "output",
+    "primary": "Use this output",
+    "next": "handoff",
+    "lesson": "Connect your call app",
+    "secondary": [
+      "Finish this later",
+      "main"
+    ],
+    "branch": [
+      "No virtual device",
+      "driver"
+    ]
+  },
+  {
+    "id": "handoff",
+    "chapter": 2,
+    "title": "One last choice in your app.",
+    "body": "In your call app’s microphone menu, choose Studio Cable.",
+    "control": "handoff",
+    "primary": "Start output check",
+    "next": "verify",
+    "lesson": "Find the microphone menu",
+    "secondary": [
+      "Finish this later",
+      "main"
+    ]
+  },
+  {
+    "id": "verify",
+    "chapter": 2,
+    "title": "Check the other end.",
+    "body": "Speak and look for a moving input meter in your call app.",
+    "control": "verify",
+    "primary": "I see my voice there",
+    "next": "ready",
+    "lesson": "Check the receiving app",
+    "secondary": [
+      "I don’t see a signal",
+      "receiving"
+    ],
+    "detail": "OUTPUT CHECK · Studio Cable · Stop available"
+  },
+  {
+    "id": "ready",
+    "chapter": 2,
+    "title": "Your mic is set up.",
+    "body": "You confirmed the signal in your app. Your sound check is saved.",
+    "control": "ready",
+    "primary": "Open MicLine",
+    "next": "main",
+    "lesson": "Your everyday controls",
+    "secondary": [
+      "Review my setup",
+      "mic"
+    ]
+  },
+  {
+    "id": "main",
+    "chapter": 2,
+    "title": "Ready when you are.",
+    "body": "Start processing when you want to use this sound.",
+    "control": "main",
+    "primary": "Run sound check again",
+    "next": "welcome",
+    "lesson": "Small tips, when you need them",
+    "secondary": [
+      "Show a gain tip",
+      "tip"
+    ]
+  },
+  {
+    "id": "denied",
+    "chapter": 0,
+    "title": "Access is still off.",
+    "body": "Enable MicLine in Privacy & Security → Microphone, then come back.",
+    "control": "denied",
+    "primary": "I’ve enabled access",
+    "next": "mic",
+    "lesson": "Enable microphone access",
+    "secondary": [
+      "Set up later",
+      "main"
+    ]
+  },
+  {
+    "id": "silent",
+    "chapter": 0,
+    "title": "We haven’t heard anything yet.",
+    "body": "Check the mic’s mute switch, then try another input channel.",
+    "control": "silent",
+    "primary": "Try again",
+    "next": "gain",
+    "lesson": "Find the right input channel",
+    "secondary": [
+      "Choose another mic",
+      "mic"
+    ]
+  },
+  {
+    "id": "clipped",
+    "chapter": 0,
+    "title": "A little too loud at the mic.",
+    "body": "Lower the gain on your microphone or interface, then try again.",
+    "control": "clipped",
+    "primary": "Check again",
+    "next": "gain",
+    "lesson": "Hardware gain versus trim",
+    "secondary": [
+      "My mic has no gain knob",
+      "position"
+    ]
+  },
+  {
+    "id": "position",
+    "chapter": 0,
+    "title": "Give your mic some space.",
+    "body": "Move a little farther away and speak normally. MicLine’s trim cannot repair input clipping.",
+    "control": "position",
+    "primary": "Check again",
+    "next": "gain",
+    "lesson": "Adjust your mic position",
+    "secondary": [
+      "Skip this check",
+      "noise"
+    ]
+  },
+  {
+    "id": "unavailable",
+    "chapter": 1,
+    "title": "We can skip this effect.",
+    "body": "Sound isolation isn’t available on this setup. Your microphone still works.",
+    "control": "unavailable",
+    "primary": "Continue without it",
+    "next": "compressor",
+    "lesson": "Effects are optional",
+    "secondary": [
+      "Choose an installed AU",
+      "library"
+    ]
+  },
+  {
+    "id": "library",
+    "chapter": 1,
+    "title": "Use an effect you trust.",
+    "body": "Installed Audio Units can offer another noise-reduction option.",
+    "control": "library",
+    "primary": "Continue without adding",
+    "next": "compressor",
+    "lesson": "Find an Audio Unit",
+    "clip": "find-isolation",
+    "secondary": [
+      "Back to sound isolation",
+      "noise"
+    ]
+  },
+  {
+    "id": "driver",
+    "chapter": 2,
+    "title": "Need a virtual microphone?",
+    "body": "BlackHole is one option. Already have another? You can use that instead.",
+    "control": "driver",
+    "primary": "Show installation steps",
+    "next": "install",
+    "lesson": "Set up a virtual device",
+    "secondary": [
+      "Choose an existing device",
+      "output"
+    ]
+  },
+  {
+    "id": "install",
+    "chapter": 2,
+    "title": "Install, then check again.",
+    "body": "Get BlackHole from its official site. Finish its installer, then return here.",
+    "control": "install",
+    "primary": "Check for new devices",
+    "next": "output",
+    "lesson": "Return after installation",
+    "secondary": [
+      "It still isn’t showing",
+      "rescan"
+    ]
+  },
+  {
+    "id": "rescan",
+    "chapter": 2,
+    "title": "The device hasn’t appeared.",
+    "body": "Close audio apps before trying a macOS audio-service restart.",
+    "control": "rescan",
+    "primary": "Show restart guidance",
+    "next": "restart",
+    "lesson": "Recover without guessing",
+    "secondary": [
+      "Leave this for later",
+      "main"
+    ]
+  },
+  {
+    "id": "restart",
+    "chapter": 2,
+    "title": "This interrupts all audio.",
+    "body": "Save recordings and close calls first. Restarting audio may need administrator approval.",
+    "control": "restart",
+    "primary": "I’ve restarted audio · Check again",
+    "next": "output",
+    "lesson": "Restart guidance",
+    "secondary": [
+      "Use the installer’s restart advice",
+      "main"
+    ]
+  },
+  {
+    "id": "receiving",
+    "chapter": 2,
+    "title": "Let’s check the connection.",
+    "body": "Keep MicLine processing, then select Studio Cable as your call app’s microphone.",
+    "control": "receiving",
+    "primary": "Try the output check again",
+    "next": "verify",
+    "lesson": "Trace the signal",
+    "secondary": [
+      "Choose another output",
+      "output"
+    ]
+  },
+  {
+    "id": "disconnected",
+    "chapter": 0,
+    "title": "Your microphone disconnected.",
+    "body": "We stopped the sound check. Reconnect it or choose another microphone.",
+    "control": "disconnected",
+    "primary": "Choose a microphone",
+    "next": "mic",
+    "lesson": "Resume safely",
+    "secondary": [
+      "End sound check",
+      "main"
+    ]
+  },
+  {
+    "id": "resume",
+    "chapter": 0,
+    "title": "Pick up where you left off.",
+    "body": "Your choices are saved. Listening is off until you start it again.",
+    "control": "resume",
+    "primary": "Resume sound check",
+    "next": "listen",
+    "lesson": "You’re in control",
+    "secondary": [
+      "Start over",
+      "welcome"
+    ]
+  },
+  {
+    "id": "tip",
+    "chapter": 2,
+    "title": "Gain changes what enters effects.",
+    "body": "It makes your signal louder or quieter. Lower hardware gain if the raw input clips.",
+    "control": "tip",
+    "primary": "Got it",
+    "next": "main",
+    "lesson": "See the difference",
+    "secondary": [
+      "Open sound check",
+      "listen"
+    ]
+  }
+]

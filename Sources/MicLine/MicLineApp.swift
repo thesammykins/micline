@@ -91,10 +91,10 @@ struct MicLineApp: App {
                     }
             }
         }
-        .defaultSize(width: 760, height: 760)
+        .defaultSize(width: 720, height: 680)
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
 
         Settings {
             if fixture == nil { SettingsRootView(graph: graph) }
@@ -108,7 +108,7 @@ struct MicLineApp: App {
                 FixtureMenuView()
             }
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
@@ -117,55 +117,35 @@ struct MenuView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(graph.running ? "●  \(graph.bypass ? "Bypassed" : "Processing")" : "○  Stopped")
-            .foregroundStyle(graph.running ? .green : .secondary)
-        Text(routeSummary).foregroundStyle(.secondary)
-        Divider()
-        Button(graph.running || graph.loading ? "Stop Processing" : "Start Processing") {
-            if graph.running || graph.loading { graph.stop() }
-            else if graph.selectedOutput?.isVirtual == false {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            } else {
-                Task { await graph.start() }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack { Text("MicLine").font(.headline); Spacer(); ProcessingState(graph: graph) }
+            Text("\(graph.selectedInput?.name ?? "Choose a microphone") · Input \(graph.selectedInputChannel + 1)")
+                .font(.callout).lineLimit(2)
+            Text("→ \(graph.selectedOutput?.name ?? "Choose an output") · \(outputChannels)")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            MenuOutputMeter(display: graph.meterDisplay)
+            HStack {
+                StartButton(graph: graph)
+                Spacer()
+                Toggle("Bypass effects", isOn: $graph.bypass).toggleStyle(.switch).controlSize(.small)
+                    .help("Skip low cut and effects. Gain remains active.")
+                MonitorButton(graph: graph)
+            }
+            if let issue = graph.routeIssue { Text(issue).font(.caption).foregroundStyle(.orange) }
+            Divider()
+            HStack {
+                Button("Open MicLine") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+                Spacer()
+                SettingsLink { Image(systemName: "gearshape") }.help("Settings")
+                Button("Quit") { graph.stop(); NSApp.terminate(nil) }.keyboardShortcut("q")
             }
         }
-        .help(processingHelp)
-        .accessibilityHint(processingHelp)
-        .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
-        .keyboardShortcut("s", modifiers: [.command, .shift])
-        Divider()
-        Button("Open MicLine") {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .help("Open the main MicLine window.")
-        .keyboardShortcut("o")
-        SettingsLink { Text("Settings…") }.keyboardShortcut(",")
-        Divider()
-        Button("Quit MicLine") {
-            graph.stop()
-            NSApp.terminate(nil)
-        }
-        .help("Stop processing, save settings, and quit MicLine.")
-        .keyboardShortcut("q")
-        Text("Monitor \(graph.monitoring ? "on" : "off") · \(activeEffectCount) effect\(activeEffectCount == 1 ? "" : "s") \(graph.running ? "active" : "enabled")")
-            .foregroundStyle(.secondary)
+        .padding(16).frame(width: 360)
     }
 
-    private var processingHelp: String {
-        if graph.running || graph.loading { return "Stop processing and save effect state." }
-        return graph.selectedOutput?.isVirtual == false
-            ? "Open MicLine to review the physical-output feedback warning before starting."
-            : "Start the saved microphone processing route."
-    }
-
-    private var routeSummary: String {
-        "\(graph.selectedInput?.name ?? "No microphone") → \(graph.selectedOutput?.name ?? "No output")"
-    }
-
-    private var activeEffectCount: Int {
-        graph.running && graph.bypass ? 0 : graph.settings.effects.filter { !$0.bypassed }.count
+    private var outputChannels: String {
+        graph.selectedOutput?.outputChannels == 1 ? "Channel 1"
+            : "Channels \(graph.selectedOutputChannel + 1)-\(graph.selectedOutputChannel + 2)"
     }
 }
 
@@ -176,10 +156,12 @@ struct MainView: View {
     @AppStorage("completedSetup") private var completedSetup = false
     @State private var addingEffect = false
     @State private var setup = false
+    @State private var checkingMicrophone = false
+    @State private var screenHeight = NSScreen.main?.visibleFrame.height ?? 900
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
                 routeSection
                 LiveMeterPanel(display: graph.meterDisplay)
                 controlsSection
@@ -192,9 +174,13 @@ struct MainView: View {
                 Text(displayStatus)
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            .padding(24)
+            .padding(20)
         }
-        .frame(minWidth: 680, minHeight: 560)
+        .frame(width: 720, height: min(650 + CGFloat(min(graph.settings.effects.count, 4)) * 56, max(400, screenHeight - 90)))
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { note in
+            if let window = note.object as? NSWindow, window.identifier?.rawValue == "main",
+               let screen = window.screen { screenHeight = screen.visibleFrame.height }
+        }
         .toolbar {
             ToolbarItem(placement: .automatic) { ProcessingState(graph: graph).fixedSize() }
             ToolbarItem(placement: .primaryAction) {
@@ -209,6 +195,7 @@ struct MainView: View {
         .task { if showsOnboarding && !completedSetup && !CommandLine.arguments.contains("--probe") { setup = true } }
         .sheet(isPresented: $setup) { OnboardingView(graph: graph, isPresented: $setup, completedSetup: $completedSetup) }
         .sheet(isPresented: $addingEffect) { EffectLibraryView(graph: graph) }
+        .sheet(isPresented: $checkingMicrophone) { InputCheckView(graph: graph) }
         .sheet(isPresented: Binding(get: { graph.genericEditorID != nil }, set: { if !$0 { graph.genericEditorID = nil } })) {
             GenericAUControlsView(graph: graph)
         }
@@ -219,11 +206,14 @@ struct MainView: View {
             HStack {
                 Text("ROUTE").font(.headline).foregroundStyle(.secondary)
                 Spacer()
+                Button("Check Microphone...") { checkingMicrophone = true }
+                    .disabled(graph.setupActive)
+                    .help("Check your microphone level before effects, without sending audio anywhere.")
                 Text(graph.formatDescription).font(.callout).foregroundStyle(.secondary).lineLimit(1)
             }
             HStack(spacing: 12) {
                 routePicker(title: "MICROPHONE", icon: "mic", selection: Binding(
-                    get: { graph.settings.inputUID }, set: { graph.selectInput($0) }), devices: graph.inputs)
+                    get: { graph.settings.inputUID }, set: { graph.selectInput($0) }), devices: graph.inputs.filter { !$0.isVirtual })
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
                 routePicker(title: "PROCESSED OUTPUT", icon: "waveform", selection: Binding(
                     get: { graph.settings.outputUID }, set: { graph.selectOutput($0) }), devices: graph.outputs)
@@ -232,6 +222,7 @@ struct MainView: View {
             .padding(12)
             .background(.background, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
+            RouteChannelPickers(graph: graph)
         }
     }
 
@@ -241,7 +232,7 @@ struct MainView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
                 Picker(title, selection: selection) {
-                    Text("Choose…").tag("")
+                    Text("Choose...").tag("")
                     ForEach(devices) { Text($0.name).tag($0.uid) }
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize(horizontal: false, vertical: true)
@@ -270,7 +261,7 @@ struct MainView: View {
                 Slider(value: $graph.settings.gainDB, in: -24...12, step: 0.5) {
                     Text("Gain")
                 } minimumValueLabel: { Text("−24") } maximumValueLabel: { Text("+12") }
-                .help("Adjust microphone gain from −24 to +12 decibels.")
+                .help("Adjust the level entering your effects. This cannot repair clipping at the microphone.")
             }
             Divider().frame(height: 80)
             VStack(alignment: .leading, spacing: 10) {
@@ -315,23 +306,25 @@ struct MainView: View {
                     .help("Bypass low cut and all Audio Unit effects. Gain remains active.")
             }
             if graph.settings.effects.isEmpty {
-                ContentUnavailableView("No effects added", systemImage: "slider.horizontal.3",
-                    description: Text("Gain and low cut work without an Audio Unit."))
-                    .frame(maxWidth: .infinity, minHeight: 100)
+                Label("No effects added. Gain and low cut are ready to use.", systemImage: "slider.horizontal.3")
+                    .font(.callout).foregroundStyle(.secondary).padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.background, in: RoundedRectangle(cornerRadius: 10))
             } else {
-                EffectChainView(graph: graph)
-                .padding(.horizontal, 14)
+                ScrollView {
+                    EffectChainView(graph: graph).padding(.horizontal, 14)
+                }
+                .frame(height: CGFloat(min(graph.settings.effects.count, 4)) * 56 + 20)
                 .background(.background, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
             }
             HStack {
-                Text("Structural changes stop processing before rebuilding the chain.")
+                Text("Adding, removing or moving an effect briefly pauses audio, then resumes it.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Add Effect…") { addingEffect = true }
+                Button("Add Effect...") { addingEffect = true }
                     .buttonStyle(.borderedProminent)
-                    .disabled(graph.loading || graph.settings.effects.count >= 16)
+                    .disabled(graph.setupActive || graph.loading || graph.settings.effects.count >= 16)
                     .help("Browse registered Audio Unit effects to add to the end of the chain.")
             }
         }
@@ -359,7 +352,7 @@ struct ProcessingState: View {
     @ObservedObject var graph: AudioGraph
 
     var body: some View {
-        Label(graph.loading ? "Starting…" : graph.running ? (graph.bypass ? "Bypassed" : "Processing") : "Stopped",
+        Label(graph.loading ? "Starting..." : graph.checkingInput ? "Sound check" : graph.running ? (graph.bypass ? "Bypassed" : "Processing") : "Stopped",
               systemImage: graph.running ? "circle.fill" : "circle")
             .labelStyle(.titleAndIcon)
             .font(.callout)
@@ -376,62 +369,22 @@ struct StartButton: View {
 
     var body: some View {
         Button {
-            if graph.running || graph.loading { graph.stop() }
+            if graph.running || graph.loading || graph.checkingInput { graph.stop() }
             else if graph.selectedOutput?.isVirtual == false { confirm = true }
             else { Task { await graph.start() } }
         } label: {
-            Label(graph.loading ? "Cancel" : graph.running ? "Stop" : "Start", systemImage: graph.running ? "stop.fill" : "play.fill")
+            Label(graph.loading ? "Cancel" : (graph.running || graph.checkingInput) ? "Stop" : "Start", systemImage: (graph.running || graph.checkingInput) ? "stop.fill" : "play.fill")
                 .labelStyle(.titleAndIcon)
         }
         .buttonStyle(.borderedProminent)
         .tint(graph.running ? .red : .accentColor)
-        .disabled(!graph.running && !graph.loading && (!graph.canStart || graph.routeIssue != nil))
-        .help(graph.running || graph.loading ? "Stop processing and save effect state." : "Start the selected processing route.")
+        .disabled(graph.setupActive || (!graph.running && !graph.loading && !graph.checkingInput && (!graph.canStart || graph.routeIssue != nil)))
+        .help(graph.running || graph.loading || graph.checkingInput ? "Stop processing and save effect state." : "Start the selected processing route.")
         .confirmationDialog("Send microphone audio to \(graph.selectedOutput?.name ?? "this physical output")?", isPresented: $confirm) {
             Button("Start on \(graph.selectedOutput?.name ?? "selected output")") { Task { await graph.start() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Speakers near the microphone can create loud feedback. Use BlackHole for calls, or headphones for physical listening.")
+            Text("Speakers near the microphone can create loud feedback. Use a virtual audio device for calls, or headphones for physical listening.")
         }
-    }
-}
-
-struct OnboardingView: View {
-    @ObservedObject var graph: AudioGraph
-    @Binding var isPresented: Bool
-    @Binding var completedSetup: Bool
-    var height: CGFloat = 680
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Set up MicLine").font(.largeTitle.bold())
-            Text("Choose a microphone and a virtual processed output. MicLine will request microphone access when processing starts.")
-                .foregroundStyle(.secondary)
-            ScrollView {
-                VStack(spacing: 20) {
-                    AudioSetupView(graph: graph)
-                    GroupBox("Optional startup") {
-                        VStack(alignment: .leading, spacing: 14) {
-                            LoginItemToggle()
-                            Divider()
-                            AutomaticProcessingToggle()
-                        }
-                        .padding(8)
-                    }
-                }
-                .padding(.bottom, 4)
-            }
-            HStack {
-                Spacer()
-                Button("Continue") {
-                    completedSetup = true
-                    isPresented = false
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(graph.selectedInput == nil || graph.selectedOutput?.isVirtual != true)
-                .help("Finish setup after choosing a microphone and virtual processed output.")
-            }
-        }
-        .padding(28).frame(width: 620, height: height)
     }
 }

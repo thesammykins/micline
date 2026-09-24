@@ -66,12 +66,17 @@ public struct EffectSelection: Codable, Identifiable, Equatable {
 public struct SessionSettings: Codable, Equatable {
     public var inputUID = ""
     public var outputUID = ""
+    // Optional keys preserve sessions saved before explicit channel selection.
+    public var inputChannel: Int?
+    public var outputChannel: Int?
     public var gainDB: Double = 0
     public var highPassHz: Double = 80
     public var highPassEnabled = true
     public var effects: [EffectSelection] = []
     public init() {}
     public mutating func validate() {
+        inputChannel = min(255, max(0, inputChannel ?? 0))
+        outputChannel = min(255, max(0, outputChannel ?? 0))
         gainDB = gainDB.isFinite ? min(12, max(-24, gainDB)) : 0
         highPassHz = highPassHz.isFinite ? min(300, max(20, highPassHz)) : 80
         effects = Array(effects.prefix(16))

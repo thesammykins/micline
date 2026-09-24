@@ -15,7 +15,7 @@ body:
     attributes:
       label: Component
       options:
-        - Microphone / BlackHole routing
+        - Microphone / virtual-output routing
         - Physical monitoring
         - Audio Unit effect / editor
         - Meters / interface / accessibility
@@ -52,7 +52,13 @@ body:
     id: isolation
     attributes:
       label: What changes the result?
-      description: Does it also occur with no effects, effects bypassed, monitoring off, or another supported route? For an AU, include its vendor/version and public component codes if known. Do not attach its state.
+      description: Does it also occur with no effects, effects bypassed, monitoring off, or another supported route?
+  - type: textarea
+    id: audio-unit
+    attributes:
+      label: Audio Unit details (for effect problems)
+      description: Compatibility varies by plug-in and version; MicLine does not guarantee every Audio Unit. Include name, vendor, version, AU format, native or generic editor, and whether the failure occurs when adding, opening controls, processing, or restoring state. Does a built-in Apple effect work? Do not attach presets, licenses, plug-in binaries or state.
+      placeholder: "Example: Vendor / Effect / version; native editor opens but processing stops; built-in Apple effect works."
   - type: textarea
     id: diagnostics
     attributes:
