@@ -1,5 +1,11 @@
 # Releasing MicLine
 
+Write `docs/releases/VERSION.md` with useful user-facing changes before tagging.
+Use headings, paragraphs and single-line bullets; text is escaped into inline
+HTML in the signed Sparkle feed. The same Markdown becomes the GitHub release
+body. Missing notes fail CI before signing credentials load. Update `CHANGELOG.md`
+with a link to the version.
+
 Push a stable version tag on a commit in `main`:
 
 ```sh

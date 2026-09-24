@@ -55,6 +55,7 @@ jobs:
           MICLINE_SPARKLE_PUBLIC_ED_KEY: ${{ vars.MICLINE_SPARKLE_PUBLIC_ED_KEY }}
           MICLINE_SIGNING_CERTIFICATE_SHA1: ${{ vars.MICLINE_SIGNING_CERTIFICATE_SHA1 }}
         run: |
+          test -s "docs/releases/$MICLINE_VERSION.md"
           ./scripts/build.sh --check-release-configuration
           [[ "$MICLINE_SIGNING_CERTIFICATE_SHA1" =~ ^[[:xdigit:]]{40}$ ]] || {
             echo "MICLINE_SIGNING_CERTIFICATE_SHA1 must pin the new MicLine Developer ID certificate" >&2

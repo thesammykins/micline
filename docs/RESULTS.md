@@ -177,3 +177,16 @@ after starting/stopping a route and removing a temporary Apple dynamics effect.
 One retry also failed. Earlier takeover checks passed. This is a candidate for
 1.0.1 investigation, not a confirmed diagnosis or a fixed issue. No runtime code
 was changed in the README cleanup.
+
+## 1.0.1 candidate verification
+
+The old build reproduced the immediate raw-check configuration stop. The new
+build recovered input capture, completed repeated five-second checks, and
+respected explicit Stop on fifine input 1 with no output or PCM recording.
+Recovery reuses the same verified input-only engine once, does not extend its
+deadline and stops on a changed device/channel/rate or enabled output. Independent
+code review found no blocking cancellation or route-safety defect.
+
+The GPT-6 Luna max sweep found no other confirmed onboarding/effect-control
+defect. Its hypothesis that Settings-scoped updater construction might delay
+automatic checks needs runtime confirmation and is not part of this patch.

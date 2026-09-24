@@ -47,6 +47,7 @@ public final class AudioGraph: ObservableObject {
     private var observer: NSObjectProtocol?
     private var terminationObserver: NSObjectProtocol?
     private var generation = 0
+    private var inputCheckRestarted = false
     private var checkDeadline: Task<Void, Never>?
     private var resumesAfterEffectEdit = false
     private let defaults: UserDefaults
@@ -277,6 +278,7 @@ public final class AudioGraph: ObservableObject {
             return
         }
         let check = AVAudioEngine()
+        inputCheckRestarted = false
         do {
             try check.inputNode.withAudioUnit { unit in
                 guard let unit else { throw GraphError.message("Microphone audio unit is unavailable.") }
@@ -319,7 +321,20 @@ public final class AudioGraph: ObservableObject {
                     do {
                         try self.verifyInputCheck(check, input: input, channel: channel)
                         if check.isRunning { return }
-                        self.stop(message: "The microphone engine stopped during configuration. Start the sound check again when ready.")
+                        // HAL can finish selecting the input after start() and stop
+                        // the engine. Restart that same verified input once, without
+                        // extending the original deadline or enabling an output.
+                        guard !self.inputCheckRestarted else {
+                            self.stop(message: "The microphone stopped again. Reconnect it and try another sound check.")
+                            return
+                        }
+                        self.inputCheckRestarted = true
+                        try check.start()
+                        try self.verifyInputCheck(check, input: input, channel: channel)
+                        guard check.isRunning else {
+                            self.stop(message: "The microphone could not resume. Reconnect it and try again.")
+                            return
+                        }
                     } catch {
                         self.stop(message: "Microphone configuration changed: \(error.localizedDescription)")
                     }

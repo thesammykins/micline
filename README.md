@@ -5,11 +5,11 @@ macOS app for adjusting gain, reducing rumble and arranging Audio Unit effects
 for your call or recording app.
 
 **[Download MicLine](https://github.com/thesammykins/micline/releases/latest)** ·
-[Get help](SUPPORT.md) · [Privacy](docs/PRIVACY.md)
+[What’s new](CHANGELOG.md) · [Get help](SUPPORT.md) · [Privacy](docs/PRIVACY.md)
 
 Requires **Apple silicon and macOS 27 or later**. Releases are signed and notarized.
 
-![MicLine processing microphone audio through an Apple dynamics effect, with live input and output meters](docs/images/micline-processing.jpg)
+![MicLine processing microphone audio with live input and output meters, gain and low cut](docs/images/micline-processing.png)
 
 ## Make your microphone sound like you
 

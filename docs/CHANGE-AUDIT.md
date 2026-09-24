@@ -122,3 +122,16 @@ remains applicable; no private credential material was committed.
 Local Markdown links and whitespace checks pass. Hunk reviewed this documentation
 diff. No app code, release tag, saved route or persistent effect changes are part
 of this cleanup.
+
+## 1.0.1 patch
+
+- `AudioGraph.swift`: one bounded restart of a stopped, unchanged raw-input engine.
+- `README.md`, `docs/images/`: use Samantha's supplied PNG unchanged; remove the
+  older capture with the sharing badge and white corners.
+- `CHANGELOG.md`, `docs/releases/`: versioned user-facing release notes.
+- `prepare-release-feed.py`, `publish-release.sh`, release workflow and existing
+  release-boundary test: require notes and include escaped inline notes in the
+  signed Sparkle feed and GitHub release body.
+- Release procedure and results updated with evidence and investigation limits.
+
+No generated image was used. Existing 1.0.0 release files remain immutable.

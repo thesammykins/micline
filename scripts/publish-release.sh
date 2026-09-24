@@ -7,6 +7,8 @@ set -euo pipefail
 : "${SPARKLE_PRIVATE_KEY:?SPARKLE_PRIVATE_KEY GitHub secret is required}"
 [[ "$GH_REPO" == "thesammykins/micline" && "$RELEASE_TAG" == "v$MICLINE_VERSION" ]] || exit 1
 ./scripts/release-version.py "$RELEASE_TAG" >/dev/null
+notes="docs/releases/$MICLINE_VERSION.md"
+[[ -s "$notes" ]] || { echo "Missing release notes: $notes" >&2; exit 1; }
 sparkle="$PWD/.build/artifacts/sparkle/Sparkle/bin"
 updates="$PWD/build/updates"
 site="$PWD/build/site/updates"
@@ -43,7 +45,7 @@ printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/generate_appcast" \
 if grep -q 'does not match' "$RUNNER_TEMP/micline-appcast-generation.log"; then
     echo "Sparkle key does not match the application's public key" >&2; exit 1
 fi
-python3 scripts/prepare-release-feed.py "$updates/appcast.xml" "$updates" "$RELEASE_TAG" "$MICLINE_BUILD_NUMBER" "${previous:+$RUNNER_TEMP/previous-appcast.xml}"
+python3 scripts/prepare-release-feed.py "$updates/appcast.xml" "$updates" "$RELEASE_TAG" "$MICLINE_BUILD_NUMBER" "${previous:+$RUNNER_TEMP/previous-appcast.xml}" "$notes"
 printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/sign_update" --ed-key-file - "$updates/appcast.xml"
 printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$sparkle/sign_update" --ed-key-file - --verify "$updates/appcast.xml"
 cp "$updates/appcast.xml" "$site/appcast.xml"
@@ -51,7 +53,7 @@ assets=("build/MicLine-$MICLINE_VERSION.dmg" "build/MicLine-$MICLINE_VERSION.dmg
 shopt -s nullglob
 for delta in "$updates"/*.delta; do assets+=("$delta"); done
 if [[ -z "$existing" ]]; then
-    gh release create "$RELEASE_TAG" --verify-tag --draft --title "MicLine $MICLINE_VERSION" --generate-notes
+    gh release create "$RELEASE_TAG" --verify-tag --draft --title "MicLine $MICLINE_VERSION" --notes-file "$notes"
 fi
 gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 gh release edit "$RELEASE_TAG" --draft=false --latest

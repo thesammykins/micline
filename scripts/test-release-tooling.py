@@ -38,8 +38,11 @@ class ReleaseTests(unittest.TestCase):
             previous.write_text(feed(item('1000', old_url, 1)))
             current = root / 'appcast.xml'
             current.write_text(feed(item('2000', new_url, archive.stat().st_size) + item('1000', old_url.replace('download/v0.1.0/', 'download/v0.2.0/'), 1)))
-            cmd = ['python3', str(ROOT / 'prepare-release-feed.py'), str(current), str(root), 'v0.2.0', '2000', str(previous)]
+            notes = root / 'notes.md'
+            notes.write_text('# Release\n\n## Fixes\n- Recover checks & preserve <input>.\n')
+            cmd = ['python3', str(ROOT / 'prepare-release-feed.py'), str(current), str(root), 'v0.2.0', '2000', str(previous), str(notes)]
             subprocess.run(cmd, capture_output=True, check=True)
+            self.assertIn("Recover checks &amp; preserve &lt;input&gt;.", ET.parse(current).findtext("./channel/item/description"))
             items = ET.parse(current).getroot().findall('./channel/item')
             self.assertEqual(items[1].find('enclosure').get('url'), old_url)
             archive.unlink()

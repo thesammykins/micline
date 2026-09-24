@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Fail before publication if Sparkle omitted or misaddressed the new update."""
 import base64
+import html
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-feed, directory, tag, build, previous = sys.argv[1:]
+feed, directory, tag, build, previous = sys.argv[1:6]
+notes = Path(sys.argv[6]) if len(sys.argv) == 7 else None
 ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
 tree = ET.parse(feed)
 root = tree.getroot()
@@ -24,6 +26,29 @@ items = [item for item in root.findall('./channel/item') if item.findtext(ns + '
 if len(items) != 1:
     sys.exit('Expected exactly one feed item for this build')
 item = items[0]
+if notes is not None:
+    # Release notes deliberately use only headings, paragraphs and bullet lines.
+    # Escape author text before embedding HTML in RSS; no remote notes page needed.
+    paragraphs = []
+    for line in notes.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('# '):
+            continue
+        if line.startswith('## '):
+            paragraphs.append('<h3>' + html.escape(line[3:]) + '</h3>')
+        elif line.startswith('- '):
+            paragraphs.append('<p>• ' + html.escape(line[2:]) + '</p>')
+        else:
+            paragraphs.append('<p>' + html.escape(line) + '</p>')
+    if not paragraphs:
+        sys.exit('Release notes must describe user-facing changes')
+    description = item.find('description')
+    if description is None:
+        description = ET.SubElement(item, 'description')
+    description.text = '\n'.join(paragraphs)
+
 if item.findtext(ns + 'minimumSystemVersion') != '27.0':
     sys.exit('Unexpected minimum system version')
 full = item.find('enclosure')
