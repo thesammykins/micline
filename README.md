@@ -9,7 +9,7 @@ for your call or recording app.
 
 Requires **Apple silicon and macOS 27 or later**. Releases are signed and notarized.
 
-![MicLine processing microphone audio with live input and output meters, gain and low cut](docs/images/micline-processing.png)
+![MicLine 1.1 with live input and output meters, gain controls, low cut and an Audio Unit effect](docs/images/micline-processing.png)
 
 ## Make your microphone sound like you
 
