@@ -1,9 +1,10 @@
 # Release assessment — 24 September 2026
 
-**CONDITIONAL GO.** The Developer ID app is signed, accepted by Apple with no
-issues, stapled and accepted by Gatekeeper as Notarized Developer ID. Dedicated
-GitHub secrets are configured. The first hosted tag release and public update
-feed deployment are the next acceptance gate. See [RELEASE-SETUP.md](RELEASE-SETUP.md).
+**RELEASED: 1.0.0.** The hosted tag workflow passed Developer ID signing,
+Apple acceptance of app and DMG, stapling, Gatekeeper, GitHub publication and
+Pages deployment. Public download checksum and Sparkle signatures verified.
+See [release setup record](RELEASE-SETUP.md) for source and run identity.
+An installed 1.0.0 → 1.0.1 update remains the next acceptance exercise.
 
 ## Current implementation and evidence
 
@@ -72,7 +73,7 @@ reconstruction, preservation of previous release URLs and rejection of tampering
 or wrong keys. Six notarization and two release-boundary tests pass. The tag
 workflow signs, notarizes and publishes release assets, then deploys Pages.
 Published-release retries preserve immutable downloads and restore the latest
-verified feed. No hosted tag run or public feed deployment has occurred yet.
+verified feed. The 1.0.0 hosted run and public feed deployment passed.
 
 The repository is public; dedicated Developer ID, Notary and Sparkle credentials
 are provisioned in GitHub's release-signing environment. There is no manual

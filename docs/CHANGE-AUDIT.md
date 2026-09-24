@@ -94,3 +94,12 @@ microphone/channel change. Main-window and Advanced Settings checks use this sam
 flow. Settings prevents duplicate setup sheets. Live verification from processing
 showed a changing raw meter, automatic five-second stop and retained peak; no
 output or microphone recording was used.
+
+## Published 1.0.0
+
+Source commit `374170e` is tagged and published. Subsequent documentation records
+the final outcome. CI-only corrections: macOS-compatible encrypted PKCS#12
+export, DMG primary-signature assessment context, and v* Pages deployment policy.
+No published release assets were replaced. Public DMG checksum, notarization,
+Gatekeeper and Sparkle archive/feed verification passed. Full inventory above
+remains applicable; no private credential material was committed.
