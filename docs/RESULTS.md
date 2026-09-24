@@ -168,3 +168,12 @@ monitoring fix; final artifact review is tracked with the final candidate.
 Residual risk: preview-runner availability, long-duration drift/dropouts, hot-unplug
 stress, third-party AU compatibility/crash isolation, login-session behavior and
 external call-app delivery. VST2/VST3 hosting and app-based routing remain absent.
+
+## Post-release documentation capture finding
+
+On 24 September 2026, a local development build using the 1.0.0 source reported
+“The microphone engine stopped during configuration” when opening a raw check
+after starting/stopping a route and removing a temporary Apple dynamics effect.
+One retry also failed. Earlier takeover checks passed. This is a candidate for
+1.0.1 investigation, not a confirmed diagnosis or a fixed issue. No runtime code
+was changed in the README cleanup.

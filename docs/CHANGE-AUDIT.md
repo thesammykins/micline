@@ -104,3 +104,21 @@ export, DMG primary-signature assessment context, and v* Pages deployment policy
 No published release assets were replaced. Public DMG checksum, notarization,
 Gatekeeper and Sparkle archive/feed verification passed. Full inventory above
 remains applicable; no private credential material was committed.
+
+## README and repository documentation cleanup
+
+- `README.md`: product overview, current release link, one live screenshot,
+  short setup and a single development-skill paragraph; stale release and
+  BlackHole-only restrictions removed.
+- `.agents/skills/micline-development/SKILL.md`: repository-owned build, signing,
+  architecture, diagnostic and release guidance moved out of the README.
+- `docs/GETTING-STARTED.md`: detailed user walkthrough and recovery guidance.
+- `docs/images/`: two inspected native screenshots and capture provenance.
+- `AGENTS.md`, `CONTRIBUTING.md`, `SUPPORT.md`: link to the relevant skill or guide;
+  contribution checks now call for meaningful rather than mandatory new tests.
+- `docs/RESULTS.md`: records the raw-check configuration failure encountered
+  during screenshot capture as an unresolved 1.0.1 investigation candidate.
+
+Local Markdown links and whitespace checks pass. Hunk reviewed this documentation
+diff. No app code, release tag, saved route or persistent effect changes are part
+of this cleanup.

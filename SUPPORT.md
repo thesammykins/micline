@@ -1,8 +1,7 @@
 # Getting help
 
-First check [setup and troubleshooting](README.md). Use headphones for monitoring;
-do not reproduce feedback by increasing volume. BlackHole remains separately
-installed. MicLine never changes system defaults or reloads CoreAudio for you.
+First check [setup and troubleshooting](docs/GETTING-STARTED.md). Use headphones for monitoring;
+do not reproduce feedback by increasing volume. Virtual audio drivers such as BlackHole are installed separately. MicLine never changes system defaults or reloads CoreAudio for you.
 
 Use the app's diagnostic report to review a local snapshot, export it if useful,
 and open the GitHub issue form. **Nothing is submitted automatically.** GitHub

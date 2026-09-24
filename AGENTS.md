@@ -61,6 +61,9 @@ graph over frameworks, generic wrappers or hypothetical extension points.
 
 ## Build, test and release
 
+Use `.agents/skills/micline-development/SKILL.md` for local development and
+diagnostic instructions; it links the release procedure and verification history.
+
 ```sh
 xcodebuild -version
 xcrun --sdk macosx --show-sdk-version

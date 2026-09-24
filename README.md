@@ -1,11 +1,67 @@
 # MicLine
 
-A native macOS 27 microphone processor. Choose your microphone, arrange Audio Unit
-effects, and send the filtered signal to BlackHole for your call or recording app.
-Gain, low cut, live levels and bypass stay close at hand in a compact window and
-native menu-bar menu.
+Shape your microphone audio before it reaches your call. MicLine is a native
+macOS app for adjusting gain, reducing rumble and arranging Audio Unit effects
+for your call or recording app.
 
-If MicLine is useful to you, you can support its development.
+**[Download MicLine](https://github.com/thesammykins/micline/releases/latest)** ·
+[Get help](SUPPORT.md) · [Privacy](docs/PRIVACY.md)
+
+Requires **Apple silicon and macOS 27 or later**. Releases are signed and notarized.
+
+![MicLine processing microphone audio through an Apple dynamics effect, with live input and output meters](docs/images/micline-processing.jpg)
+
+## Make your microphone sound like you
+
+- **See your levels.** Input and output meters show average level, sample peaks
+  and clipping; gain and low cut sit beside your effect chain.
+- **Use your effects.** Add registered Audio Units, open their controls and drag
+  them into order. Editing a running chain briefly pauses audio, then resumes it.
+- **Compare your sound.** Bypass effects and low cut while keeping the same gain.
+  Optional headphone monitoring lets you listen to the processed output.
+- **Keep it close.** Use the main window or menu-bar controls. Closing the window
+  keeps processing; quitting stops it.
+
+## Set up, one step at a time
+
+Guided setup walks through microphone permission, input selection, raw gain,
+optional Apple Sound Isolation and compression, then connecting your call app.
+Short, silent video guides explain the controls at each stage.
+
+1. **Download and install.** Open the DMG, drag MicLine to Applications and launch it.
+2. **Set up your microphone.** Allow microphone access and follow the sound check.
+   You can check the raw microphone before installing a virtual audio device.
+3. **Choose a virtual output.** Use an installed device such as
+   [BlackHole](https://existential.audio/blackhole/). BlackHole is installed
+   separately and is optional if you already use another compatible virtual device.
+4. **Connect your other app.** Select that same virtual device as its microphone,
+   start MicLine, and check the other app's input meter. Keep its speaker output
+   on your usual headphones.
+
+For a fuller walkthrough, see the [setup guide](docs/GETTING-STARTED.md).
+Repeat setup from **Settings → Audio Setup**. Login launch and automatic
+processing are separate opt-in settings. Automatic processing uses only your saved
+virtual-output route; it never falls back to speakers.
+
+## A few useful details
+
+Use headphones for monitoring to avoid feedback. MicLine asks you to confirm the
+physical output, and never restores monitoring automatically or changes your
+hardware volume, system audio defaults or shared device sample rates.
+
+Audio Unit compatibility depends on the effect; third-party plug-ins may run
+inside MicLine's process. **VST2/VST3 hosting and per-app audio routing are not
+supported.** BlackHole's driver is not bundled. See [help and troubleshooting](SUPPORT.md)
+if a device or effect isn't behaving as expected.
+
+## Development
+
+To develop locally, read the [MicLine development skill](.agents/skills/micline-development/SKILL.md).
+It covers prerequisites, signing, build and test commands, architecture,
+diagnostics and release tooling. [Contributing](CONTRIBUTING.md) explains how to
+report bugs and submit changes.
+
+## Support MicLine
 
 <a href="https://ko-fi.com/sammykins/tip"><img src="docs/images/kofi-support.avif" alt="Support MicLine on Ko-fi" height="32"></a>
 
@@ -14,151 +70,7 @@ Source: https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01e
 Permission/provenance: https://more.ko-fi.com/brand-assets and https://help.ko-fi.com/hc/en-us/articles/360021025553-How-to-use-Ko-fi-with-Github
 SHA-256: 2bdae72d7087b7ab46de81154c12cf5cdf42999155cc7c56592969ea5b8a7083 -->
 
-## Install and use
-
-1. Install **BlackHole 2ch** separately from [Existential Audio](https://existential.audio/blackhole/).
-   Close audio apps and follow the installer’s restart prompt. MicLine does not
-   include a driver or alter system audio defaults.
-2. Build locally below, or use an authorized, signed/notarized DMG. Drag MicLine to
-   Applications and open it there. No public release is currently promised.
-3. Onboarding checks for BlackHole and offers two independent, default-off options:
-   **Launch MicLine at login** and **Start processing when MicLine opens**.
-4. Choose a microphone and **BlackHole 2ch** output, add effects, then press Start.
-   Allow microphone access when macOS asks. In your other app, choose **BlackHole
-   2ch** as its microphone—not the physical mic.
-5. Bypass skips low cut/effects but retains gain. Effects run top to bottom; adding,
-   removing or reordering stops processing. Effect settings save on Stop or Quit.
-
-**Settings → General** controls Dock visibility and startup. Hiding the Dock icon
-also removes MicLine from Command-Tab; the waveform menu-bar item remains. Closing
-a window does not stop audio. Quit does. Login launch uses macOS Login Items and
-may require approval in System Settings. Install the app in Applications before
-enabling it; moving the app can invalidate its registration.
-
-Automatic processing opens the saved microphone only for a saved virtual-output
-route. Missing devices, unsupported routes or denied permission leave it stopped;
-it never falls back to speakers. Physical monitoring requires explicit confirmation.
-Disable automatic processing if you do not want the microphone opened on launch.
-
-### Listen while processing
-
-Choose a physical stereo monitor output in **Settings → Audio Setup**, then use
-the ear button beside the main window's output selector and confirm the named
-output. Use headphones: speakers can feed back into the mic.
-Monitoring sends the same processed mix to BlackHole and your listening device,
-follows the main gain, and never changes hardware volume. All three devices must
-already use the same sample rate. Turning monitoring off or changing its device
-stops both outputs; press Start to resume BlackHole only. Monitoring never resumes
-automatically.
-
-## BlackHole setup and recovery
-
-Open **Settings → Audio Setup** to check detection, choose BlackHole, or open
-microphone privacy settings. MicLine identifies the registered Core Audio endpoint,
-not merely an installer or a file on disk.
-
-- **Missing after installation:** close/reopen MicLine and consumer apps, then
-  Check again. Follow the official installer’s reboot instructions if still missing.
-- **Can it work without rebooting?** The vendor documents reloads for manual
-  install/uninstall paths; this is **not a guaranteed substitute** for its package’s
-  restart requirement. Reloading interrupts all audio/calls and may require admin
-  access. MicLine never performs it. See [official installation guidance](https://github.com/ExistentialAudio/BlackHole/wiki/Installation).
-- **No mic signal:** allow MicLine under System Settings → Privacy & Security →
-  Microphone; open the lid when using a MacBook’s built-in mic.
-- **No sound in a call:** explicitly choose BlackHole 2ch as that app’s microphone
-  and reopen its audio session. BlackHole does not play through speakers by itself.
-- **Route rejected:** supported routes are the current system-default pair, one
-  duplex device, or an input-only mono physical mic → stereo virtual output at the
-  same nominal rate. MicLine creates/verifies a temporary private aggregate for
-  the latter. It does not silently change shared device sample rates.
-
-BlackHole remains a separate dependency. Its [source license](https://github.com/ExistentialAudio/BlackHole/blob/master/LICENSE)
-is GPLv3; official compiled binaries/installers and branding have separate vendor
-terms. No BlackHole binary, installer, source or branding is redistributed here.
-Bundling/integration beyond the external device boundary needs licensing review.
-
-## Effects and limits
-
-Drag the six-dot grip on an effect row to place it before or after another effect.
-With the grip focused, Option–Up and Option–Down move it one position; VoiceOver
-also offers effect-specific move actions. The x button removes that effect.
-Reordering and removal stop processing; press Start when the chain is ready.
-
-Controls prefers the Audio Unit's native editor, including while stopped. If the
-native editor is unavailable or does not respond within ten seconds, MicLine
-offers generic parameter controls instead. Third-party editors may have their
-own first-use setup.
-
-- **Audio Units:** real registered AU effects, ordered processing and native editor
-  support. Third-party AUv2 code can run in-process;
-  crashes, malicious plugins and every editor are not isolated or certified.
-- **VST2/VST3:** no host yet. Files found on disk are unsupported candidates, not
-  validated plugins. MicLine does not load them.
-- No per-application audio routing, custom virtual driver or automatic device fallback.
-- No claim of zero latency: the diagnostic reports timestamp-aligned waveform lag,
-  not callback delivery or call-app end-to-end latency. Correlation below a threshold
-  is not proof of zero leakage. Long-duration drift and device recovery need more testing.
-
-## Privacy
-
-See [Privacy and diagnostic reports](docs/PRIVACY.md) for local storage, report
-contents, manual sharing and update-network behavior.
-
-## Build and test
-
-Requires Apple silicon, macOS 27 and Xcode 27 selected with `xcode-select`. SwiftPM
-pins the official Sparkle 2.10.0 dependency. Keep bundle ID `com.sammy.micline` and
-signing identity stable so microphone permission survives rebuilds.
-
-```sh
-xcodebuild -version
-xcrun --sdk macosx --show-sdk-version
-swift test --parallel
-MICLINE_SIGNING_CERTIFICATE_SHA1='40_HEX_CHARACTERS_FOR_APPROVED_DEVELOPMENT_CERTIFICATE' ./scripts/build.sh
-codesign --verify --strict --verbose=2 build/MicLine.app
-open build/MicLine.app
-```
-
-Set `MICLINE_SIGNING_CERTIFICATE_SHA1` to the exact fingerprint of an approved
-Apple Development identity for local builds; there is no default identity or
-ad-hoc signing fallback. Developer ID distribution,
-notarization, DMG packaging, exact CI secret names and artifact retention are
-documented in [Release builds](docs/RELEASING.md). App Store Connect records are not
-needed for Developer ID distribution. GitHub uses the `xcode-27` preview runner;
-macOS 26 runners cannot execute this minimum-macOS-27 app.
-
-Diagnostics are under **Settings → Advanced**. Explicit launch probes use a separate
-preferences domain and store metrics, not microphone recordings. The device/plugin
-inventory outputs and launch-probe JSON below are not sanitized; see
-[report privacy](docs/PRIVACY.md#developer-reports-and-inventories) before sharing.
-Offline output contains synthetic DSP timing metrics:
-
-```sh
-swift run -c release MicLineMeasure --devices
-swift run -c release MicLineMeasure --plugins
-swift run -c release MicLineMeasure --offline
-open build/MicLine.app --args --probe --virtual-output --report "$PWD/evidence/smoke.json"
-```
-
-Quit previous instances first; run one audio diagnostic at a time. Physical speaker
-tests can feed back—use headphones and review the warning before starting.
-If a command-line probe opens without a window, choose **Window → MicLine** to
-start it. Probe results are written only after the run completes.
-
-## Architecture
-
-SwiftUI/AppKit owns windows and controls. Main-actor `AudioGraph` owns AU lifecycle,
-gain/EQ, private aggregate routing and cancellation. Core Audio resolves stable
-device UIDs and verifies clocks/channel maps. C11 atomics publish meters to the UI;
-bounded capture buffers support diagnostics without writing PCM to disk.
-
-See [AGENTS.md](AGENTS.md) for engineering commands/invariants, [technical spec](specs/microphone-processing/TECH.md)
-for routing details, and [verification history](docs/RESULTS.md) for scoped results.
-Design provenance is recorded in `design/`; mockups are not runtime evidence.
-
 ## License
 
-Copyright 2026 Sammykins. MicLine is licensed under [Apache-2.0](LICENSE).
-Contributions use the same license; see [CONTRIBUTING.md](CONTRIBUTING.md).
-Third-party materials retain their own terms, listed in [NOTICE](NOTICE).
-Report vulnerabilities only through the private route in [SECURITY.md](SECURITY.md).
+Copyright 2026 Sammykins. [Apache-2.0](LICENSE); third-party terms are listed in
+[NOTICE](NOTICE). Report vulnerabilities through [private security reporting](SECURITY.md).
