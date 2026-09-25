@@ -29,11 +29,9 @@ jobs:
       - name: Install official Swift toolchain
         uses: compnerd/gha-setup-swift@581df1ffa3f3e786ddc73ff37364ee231f9644c5 # v0.3.0
         with:
-          source: swift.org
-          swift-version: swift-6.2.3-release
-          swift-build: 6.2.3-RELEASE
+          branch: swift-6.2.3-release
+          tag: 6.2.3-RELEASE
           build_arch: amd64
-          cache: true
       - name: Compile native Windows executable
         working-directory: Windows
         run: |
