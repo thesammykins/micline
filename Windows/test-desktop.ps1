@@ -53,6 +53,16 @@ foreach ($state in 'empty','configured','active','recovery','channel-recovery') 
         finally { $graphics.ReleaseHdc($dc) }
         $bitmap.Save((Join-Path $captures "$state.png"), [Drawing.Imaging.ImageFormat]::Png)
         $graphics.Dispose(); $bitmap.Dispose()
+        if ($state -eq 'active') {
+            # A second launch must exit without replacing or stopping this session.
+            $second = Start-Process $Exe -ArgumentList '--fixture', 'configured' -PassThru
+            if (!$second.WaitForExit(5000) -or $second.ExitCode -ne 0) { throw 'Second-instance handoff failed' }
+            if ((Read-Text ([DesktopProbe]::GetDlgItem($window, 111))) -ne 'Pause') { throw 'Second launch changed session state' }
+            [void][DesktopProbe]::SendMessage($window, 0x111, [IntPtr]111, [IntPtr]::Zero)
+            if ((Read-Text ([DesktopProbe]::GetDlgItem($window, 111))) -ne 'Start') { throw 'Pause did not reset Start' }
+            if ((Read-Text ([DesktopProbe]::GetDlgItem($window, 115))) -ne '-90.0 / -90.0 dBFS') { throw 'Pause retained stale meters' }
+            if (![DesktopProbe]::IsWindowEnabled([DesktopProbe]::GetDlgItem($window, 101))) { throw 'Pause did not unlock route selection' }
+        }
         # WM_COMMAND for the real Quit control; don't kill the tested process.
         [void][DesktopProbe]::SendMessage($window, 0x111, [IntPtr]112, [IntPtr]::Zero)
         if (!$process.WaitForExit(5000) -or $process.ExitCode -ne 0) { throw 'Quit failed' }

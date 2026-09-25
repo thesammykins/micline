@@ -204,7 +204,7 @@ private final class App {
         populate()
         switch fixture {
         case "empty": devices = []; populate(); status("No input endpoints found. Connect a microphone and Rescan.")
-        case "active": status("Processing — synthetic fixture; no microphone is open."); running(true); meters(-18.4, -10.2, -20.1, -12)
+        case "active": lastState = 2; status("Processing — synthetic fixture; no microphone is open."); running(true); meters(-18.4, -10.2, -20.1, -12)
         case "recovery": settings.inputID = "missing"; populate(); status("Stopped — saved microphone is unavailable.")
         case "channel-recovery": settings.channel = 7; populate(); status(missingMessage)
         default: status("Ready — press Start to begin processing.")
