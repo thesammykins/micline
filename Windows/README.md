@@ -55,15 +55,16 @@ x64 developer shell. From this directory:
 ```powershell
 swift build -c release
 $bin = swift build -c release --show-bin-path
-& "$bin/MicLine.exe" --self-test
+$test = Start-Process "$bin/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
+$test.ExitCode # 0 means success; the desktop executable has no console window.
 ./package.ps1
 ```
 
 `--self-test` runs offline DSP/settings tests and opens no device. `--fixture`
-with `empty`, `configured`, `active`, or `recovery` renders synthetic UI only.
+with `empty`, `configured`, `active`, `recovery`, or `channel-recovery` renders synthetic UI only.
 CI fixtures are native-rendering evidence, not a live microphone test.
 
-Packaging requires NSIS, `dumpbin`, `mt` and the MSVC x64 redist directory.
+Packaging requires NSIS, MSVC `dumpbin` and the MSVC x64 redist directory.
 Runtime dependencies are inspected recursively, copied app-local, and tested
 with the developer PATH removed. Windows CI uses a Server 2022 runner, so a
 successful build is not a substitute for Windows 11 desktop acceptance.

@@ -28,6 +28,10 @@ try {
             $name = $Matches[1]
             if (!$seen.Add($name)) { continue }
             if ($name -match '^(api-ms-|ext-ms-)') { continue }
+            # Use Windows' own system DLLs, not SDK/debugger copies found earlier
+            # on the developer PATH. CRTs still come from the redistributable set.
+            if ($name -notmatch '^(msvcp|vcruntime|concrt)' -and
+                (Test-Path (Join-Path "$env:WINDIR/System32" $name))) { continue }
             $source = $null
             foreach ($dir in $runtimeDirs) {
                 $candidate = Join-Path $dir $name
@@ -43,14 +47,26 @@ try {
             }
             $dest = Join-Path $payload $name
             Copy-Item -LiteralPath $source -Destination $dest
+            Write-Host "Bundled runtime: $name"
             $pending.Enqueue($dest)
         }
     }
     Copy-Item ../LICENSE "$payload/LICENSE.txt"
     Copy-Item ../NOTICE "$payload/NOTICE.txt"
     Copy-Item README.md "$payload/TESTING.md"
-    # Official toolchain license includes the Swift runtime exception.
-    Invoke-WebRequest 'https://raw.githubusercontent.com/swiftlang/swift/swift-6.2.3-RELEASE/LICENSE.txt' -OutFile "$payload/Swift-LICENSE.txt"
+    # Retain component licenses and Foundation's third-party attribution notices.
+    $notices = @{
+        'Swift-LICENSE.txt' = 'swiftlang/swift/swift-6.2.3-RELEASE/LICENSE.txt'
+        'Foundation-LICENSE.txt' = 'swiftlang/swift-corelibs-foundation/swift-6.2.3-RELEASE/LICENSE'
+        'FoundationEssentials-LICENSE.txt' = 'swiftlang/swift-foundation/swift-6.2.3-RELEASE/LICENSE.md'
+        'Foundation-NOTICE.txt' = 'swiftlang/swift-foundation/swift-6.2.3-RELEASE/NOTICE.txt'
+        'Dispatch-LICENSE.txt' = 'swiftlang/swift-corelibs-libdispatch/swift-6.2.3-RELEASE/LICENSE'
+        'FoundationICU-LICENSE.txt' = 'swiftlang/swift-foundation-icu/swift-6.2.3-RELEASE/LICENSE.md'
+        'Unicode-ICU-LICENSE.txt' = 'unicode-org/icu/release-74-2/LICENSE'
+    }
+    foreach ($notice in $notices.GetEnumerator()) {
+        Invoke-WebRequest "https://raw.githubusercontent.com/$($notice.Value)" -OutFile "$payload/$($notice.Key)"
+    }
     "MicLine Windows test build`nSource: $(& git rev-parse HEAD)`nSwift: 6.2.3 x64`nUnsigned tester build" | Set-Content "$payload/BUILD.txt"
     Copy-Item "$payload/BUILD.txt" 'dist/BUILD.txt'
     # This cannot prove a clean-machine install, but catches undeclared PATH DLLs.
