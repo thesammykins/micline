@@ -6,14 +6,15 @@ Provide an installable Windows 11 x64 microphone processor for initial desktop
 testing. Develop on `windows/main`; retain `main` for macOS. Keep Swift wherever
 practical without making Apple framework compatibility a prerequisite.
 
-Status: proposed first-build scope, pending approval before product implementation.
-This is not a claim that a Windows build or installer currently exists.
+Status: first-build scope approved in the Windows port thread, including the
+Swift/WinSDK frontend fallback. Implementation and tester artifacts are tracked
+in PROGRESS.md; Windows 11 live-audio acceptance remains separate from CI.
 
 ## Visual references
 
 Use the existing compact route, meter and everyday-control hierarchy in
-`design/openpencil/sound-check-v2/micline-sound-check-v2.fig`. Add Windows concepts
-to that same document and present them for approval before implementing the UI.
+`design/openpencil/sound-check-v2/micline-sound-check-v2.fig`. Keep Windows
+adaptations in that same document; new visual directions require approval.
 Use native Windows controls and window conventions, not copied macOS chrome.
 
 ## Behavior

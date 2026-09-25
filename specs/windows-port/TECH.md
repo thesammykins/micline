@@ -19,11 +19,12 @@ The inspected macOS baseline is `9ee2efb835cc2c231f63c6e419f039d4a2a98eb9`:
   `SetupEffect.swift` depend on Apple audio APIs. They cannot be translated into
   Windows audio simply by changing imports.
 
-Status: implementation plan, not an approved frontend or verified Windows build.
-No Windows runner is connected to this thread. Linux static checks cannot prove
-Windows compilation, packaging, desktop behavior or live audio.
+Status: approved first-build scope with Swift/WinSDK fallback. The implementation
+uses Swift 6.2.3 and native Win32 controls, plus a C++17 WASAPI/DSP bridge.
+Authorized GitHub Actions runs provide Windows Server 2022 build and desktop
+fixture checks. No Windows 11 runner is connected; live audio remains unverified.
 
-## Proposed changes
+## Implementation decisions
 
 ### 1. Prove the Windows build and deployment path
 
@@ -32,12 +33,12 @@ tools and Windows SDK. Pin tool/action revisions and persist dependency locks.
 Keep permissions at contents:read; upload workflow artifacts, not GitHub Releases.
 Artifacts follow repository access rules and are not inherently private. Exclude
 macOS signing/notarization jobs from Windows branch activity.
-Never run live microphone probes in CI. Pushing or triggering this build requires
-explicit authorization; no such remote action has happened yet.
+Never run live microphone probes in CI. Branch pushes, Windows CI and tester
+artifacts were authorized; public releases and merging into macOS main were not.
 
-First prove a minimal executable and packaged runtime on a clean Windows 11 x64
-machine before growing the UI. Swift/WinSDK itself needs no third-party UI package.
-The UI choice remains a gate:
+The minimal Swift/WinSDK executable compiled in Windows CI. Swift/WinSDK itself
+needs no third-party UI package. The dependency evaluation selected the native
+fallback for the first tester build:
 
 - Preferred declarative candidate: SwiftCrossUI v0.9.0, revision
   `f8bdf05729ae1cd1b7f3ec4e57177a6965052146`, WinUIBackend.
@@ -48,20 +49,21 @@ The UI choice remains a gate:
   `aaaf4a9a55fa8b509c6599be9c49bac153047dfc`; its older stable release is not the
   Windows deployment baseline. Generic bundles recursively include allowed
   Swift/MSVC DLLs, but do not automatically supply the required WinUI runtime.
-- If that deployment cannot be made acceptable, use native Win32 controls from
-  Swift/WinSDK for the first build. This retains Swift but sacrifices declarative
-  view reuse. Do not change to a C# frontend without discussing the tradeoff.
+- Use native Win32 controls from Swift/WinSDK rather than ship the old preview
+  runtime. This retains Swift but sacrifices declarative view reuse. Do not
+  change to a C# frontend without discussing the tradeoff.
 
 Approve the Windows concept in the canonical FIG before implementing product UI.
 Do not present a browser/design rendering as native Windows validation.
 
 ### 2. Extract only reusable logic
 
-Separate session validation, effect-selection data, level math and ballistics
-from Apple framework imports. Reuse the existing tests where applicable. Keep
-platform bindings separate, including persistence locations and endpoint IDs.
-Use Windows-specific build targets without resolving Sparkle on Windows. Do not
-carry AU hostability rules into the Windows model or promise preset portability.
+`Windows/Package.swift` isolates Windows targets without resolving Sparkle or
+Apple frameworks. The Swift frontend preserves the macOS level calibration and
+ballistics formula while using Windows-specific settings and endpoint IDs.
+There is no AU effect model in this increment and no claim of preset portability.
+Avoid restructuring macOS code solely to share these small formulas while the
+Windows product differs; shared extraction can follow a second proven consumer.
 
 ### 3. Implement the Windows audio route
 
@@ -70,13 +72,15 @@ ABI. Use event-driven shared-mode WASAPI with explicitly selected endpoints;
 negotiate supported formats without modifying shared hardware rates or volume.
 Represent opening/running/paused/failed states explicitly and reject stale opens.
 
-Evaluate miniaudio as the maintained C device-I/O layer before hand-writing COM
-device plumbing. Its duplex support does not establish adaptive clock handling:
-the upstream example explicitly requires lockstep devices. The physical capture
-and virtual-render route must use bounded preallocated buffering, under/overrun
-reporting and adaptive resampling for independent clocks. Same nominal rates are
-not proof of clock agreement. No allocation, logging, UI or filesystem operations
-belong on the realtime path.
+The miniaudio duplex example requires lockstep devices; it does not solve this
+route's independent clocks. Use WASAPI directly with 48 kHz float shared-mode
+autoconversion, preserving the input channel count and selecting one channel.
+Duplicate the processed mono signal into the cable's stereo render stream.
+A preallocated 16384-frame FIFO uses linear interpolation with bounded ±1000 ppm
+correction and 2048 initial silent frames (about 43 ms of buffering, not a
+call-app latency measurement). Stop on invalidation, discontinuity after the
+first packet, timeout or sustained buffer faults. No allocation, logging, UI or
+filesystem operations belong in the processing loop.
 
 Implement gain and high-pass DSP with explicit channel/format contracts. Preserve
 meter calibration and bypass-retains-gain semantics. Device invalidation and
@@ -86,7 +90,7 @@ basic route and installer are proven.
 
 ### 4. Package for a non-developer desktop
 
-Produce a versioned x64 installer plus checksum and test instructions. Package
+Produce an x64 installer plus source revision, checksum and test instructions. Package
 only redistributable dependencies with notices; verify launch without a toolchain
 or developer PATH. This repository has no Windows signing workflow; availability
 of a suitable identity is unverified. Resolve test-distribution expectations and never disable
@@ -113,13 +117,13 @@ uninstall, settings retention and shortcut behavior must be explicit and tested.
 - Keep DSP execution, stream timing and call-app delay distinct. Do not publish a
   latency claim based on a loopback correlation or successful CI build.
 
-## Parallelization
+## Ownership
 
-Keep the initial build/dependency/frontend probe in this checkout, serially:
-package decisions affect all later work. After those gates, portable DSP tests
-and Windows-native UI work can have disjoint ownership. No additional thread or
-remote runner has been provisioned; use a Windows environment only once access
-and publication are authorized.
+Swift owns windows, tray actions, settings and user intent. The C ABI owns device
+enumeration and the worker lifetime. Stop signals cancellation then joins the
+worker before returning, preventing stale startup from surviving pause or quit.
+The COM MTA worker releases its sessions before COM teardown. UI polling reads
+atomic meters and state; it never receives realtime callbacks.
 
 ## Research sources
 
