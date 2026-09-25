@@ -41,3 +41,27 @@ jobs:
           $bin = swift build -c release --show-bin-path
           & "$bin/MicLine.exe" --self-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package app-local runtimes and installer
+        run: ./Windows/package.ps1
+      - name: Exercise native desktop fixtures without microphone access
+        run: ./Windows/test-desktop.ps1
+      - name: Upload tester installer and portable app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MicLine-Windows-x64
+          path: |
+            Windows/dist/*.exe
+            Windows/dist/*.zip
+            Windows/dist/*.sha256
+            Windows/dist/BUILD.txt
+            Windows/README.md
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload native fixture captures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Windows-native-fixtures
+          path: Windows/dist/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14
