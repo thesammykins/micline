@@ -14,7 +14,10 @@ let package = Package(
             // Link a desktop image directly; post-link PE rewriting can corrupt
             // the Swift/LLVM-produced executable's import table.
             .unsafeFlags(["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup",
-                          "-Xlinker", "/MANIFEST:EMBED", "-Xlinker", "/MANIFESTINPUT:MicLine.manifest"]),
+                          // Keep the explicit asInvoker manifest; LLVM's generated
+                          // UAC fragment mismerges its XML namespaces with ours.
+                          "-Xlinker", "/MANIFESTUAC:NO", "-Xlinker", "/MANIFEST:EMBED",
+                          "-Xlinker", "/MANIFESTINPUT:MicLine.manifest"]),
         ]),
     ],
     swiftLanguageModes: [.v5],

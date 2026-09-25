@@ -39,6 +39,13 @@ jobs:
           swift build -c release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $bin = swift build -c release --show-bin-path
+          & mt.exe -nologo "-inputresource:$bin/MicLine.exe;#1" -out:embedded.manifest
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read embedded manifest' }
+          [xml]$manifest = Get-Content embedded.manifest -Raw
+          $privilege = $manifest.SelectSingleNode('//*[local-name()="requestedExecutionLevel"]')
+          if (!$privilege -or $privilege.NamespaceURI -ne 'urn:schemas-microsoft-com:asm.v3' -or $privilege.GetAttribute('level') -ne 'asInvoker' -or $privilege.GetAttribute('uiAccess') -ne 'false') {
+            throw 'Embedded manifest does not retain non-elevated asInvoker behavior'
+          }
           try {
             $test = Start-Process "$bin/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
           } catch {
