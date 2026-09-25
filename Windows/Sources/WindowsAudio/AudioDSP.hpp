@@ -14,6 +14,12 @@ constexpr uint32_t kMaxBlock = 4096;
 
 inline float finite(float value) { return std::isfinite(value) ? value : 0.0f; }
 
+inline float select_sample(const float *samples, uint32_t frame, uint32_t channels,
+                           uint32_t selected, bool silent) noexcept {
+    if (silent || !samples || selected >= channels) return 0;
+    return finite(samples[static_cast<size_t>(frame) * channels + selected]);
+}
+
 struct Meter {
     std::atomic<float> rms{0}, peak{0};
     void write(double squares, float maximum, uint32_t count) noexcept {
@@ -78,7 +84,7 @@ public:
         return static_cast<uint32_t>(std::min<uint64_t>(write_ - readBase_, kRingFrames));
     }
     double ratio() const noexcept { return ratio_; }
-    void prime(uint32_t frames = 4096) noexcept {
+    void prime(uint32_t frames = 2048) noexcept {
         write_ = frames; readBase_ = 0; position_ = 0; target_ = frames;
         std::fill_n(samples_.begin(), frames, 0.0f);
     }
@@ -86,7 +92,7 @@ public:
 private:
     std::array<float, kRingFrames> samples_{};
     uint64_t write_ = 0, readBase_ = 0;
-    double position_ = 0, ratio_ = 1, target_ = 4096;
+    double position_ = 0, ratio_ = 1, target_ = 2048;
 };
 
 } // namespace ml

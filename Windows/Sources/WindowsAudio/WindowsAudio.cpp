@@ -3,6 +3,8 @@
 
 #include <atomic>
 #include <cstring>
+#include <cstdio>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <string>
@@ -12,9 +14,11 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <initguid.h>
 #include <audioclient.h>
 #include <avrt.h>
 #include <functiondiscoverykeys_devpkey.h>
+#include <ks.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
 #include <propvarutil.h>
@@ -49,7 +53,6 @@ struct MLEngine {
 #else
     void *cancel = nullptr;
 #endif
-    std::array<float, ml::kMaxBlock * 2> outputScratch{};
 };
 
 #ifdef _WIN32
@@ -176,10 +179,12 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
             FAILED(hr = s.inClient->GetService(IID_PPV_ARGS(&s.capture))) ||
             FAILED(hr = s.outClient->GetService(IID_PPV_ARGS(&s.render)))) break;
         UINT32 outputFrames = 0;
-        if (FAILED(hr = s.outClient->GetBufferSize(&outputFrames)) || outputFrames > ml::kMaxBlock) break;
+        if (FAILED(hr = s.outClient->GetBufferSize(&outputFrames))) break;
+        if (!outputFrames || outputFrames > ml::kMaxBlock) { hr = AUDCLNT_E_BUFFER_SIZE_ERROR; break; }
         BYTE *initial = nullptr;
-        if (SUCCEEDED(s.render->GetBuffer(outputFrames, &initial)))
-            s.render->ReleaseBuffer(outputFrames, AUDCLNT_BUFFERFLAGS_SILENT);
+        if (FAILED(hr = s.render->GetBuffer(outputFrames, &initial)) ||
+            FAILED(hr = s.render->ReleaseBuffer(outputFrames, AUDCLNT_BUFFERFLAGS_SILENT))) break;
+        if (WaitForSingleObject(engine->cancel, 0) == WAIT_OBJECT_0) { hr = S_OK; break; }
         if (FAILED(hr = s.outClient->Start()) || FAILED(hr = s.inClient->Start())) break;
 
         ml::Processor dsp; engine->fifo.prime();
@@ -188,6 +193,7 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
         engine->state.store(2, std::memory_order_release);
         HANDLE events[] = {engine->cancel, s.inEvent, s.outEvent};
         uint32_t consecutiveFaults = 0;
+        bool firstPacket = true;
         while (true) {
             DWORD wait = WaitForMultipleObjects(3, events, FALSE, 2000);
             if (wait == WAIT_OBJECT_0) { hr = S_OK; break; }
@@ -198,13 +204,16 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
                 while (SUCCEEDED(hr = s.capture->GetNextPacketSize(&packet)) && packet) {
                     BYTE *data = nullptr; UINT32 frames = 0; DWORD flags = 0;
                     if (FAILED(hr = s.capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr))) break;
-                    if (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) {
+                    // Windows may mark the first packet discontinuous at stream startup.
+                    if (!firstPacket && (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)) {
                         s.capture->ReleaseBuffer(frames); hr = AUDCLNT_E_DEVICE_INVALIDATED; break;
                     }
+                    firstPacket = false;
                     double inSquares = 0, outSquares = 0; float inPeak = 0, outPeak = 0;
                     const float *samples = reinterpret_cast<const float *>(data);
                     for (UINT32 i = 0; i < frames; ++i) {
-                        float input = flags & AUDCLNT_BUFFERFLAGS_SILENT ? 0 : ml::finite(samples[i * in.channels + channel]);
+                        float input = ml::select_sample(samples, i, in.channels, channel,
+                                                       (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0);
                         float output = dsp.process(input);
                         inSquares += input * input; outSquares += output * output;
                         inPeak = std::max(inPeak, std::fabs(input)); outPeak = std::max(outPeak, std::fabs(output));
@@ -212,12 +221,13 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
                     }
                     engine->inputRMS.store(frames ? std::sqrt(inSquares / frames) : 0); engine->inputPeak.store(inPeak);
                     engine->outputRMS.store(frames ? std::sqrt(outSquares / frames) : 0); engine->outputPeak.store(outPeak);
-                    s.capture->ReleaseBuffer(frames);
+                    if (FAILED(hr = s.capture->ReleaseBuffer(frames))) break;
                 }
                 if (FAILED(hr)) break;
             } else {
                 UINT32 padding = 0;
                 if (FAILED(hr = s.outClient->GetCurrentPadding(&padding))) break;
+                if (padding > outputFrames) { hr = AUDCLNT_E_BUFFER_ERROR; break; }
                 UINT32 frames = outputFrames - padding;
                 BYTE *bytes = nullptr;
                 if (frames && FAILED(hr = s.render->GetBuffer(frames, &bytes))) break;
@@ -227,7 +237,7 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
                     float value = 0; if (!engine->fifo.pull(value)) starved = true;
                     samples[i * 2] = samples[i * 2 + 1] = value;
                 }
-                if (frames) s.render->ReleaseBuffer(frames, 0);
+                if (frames && FAILED(hr = s.render->ReleaseBuffer(frames, 0))) break;
                 if (starved) { engine->underruns.fetch_add(1); ++consecutiveFaults; }
                 else consecutiveFaults = 0;
             }
@@ -235,7 +245,12 @@ void run_engine(MLEngine *engine, std::wstring inputID, std::wstring outputID, u
         }
         if (mmcss) AvRevertMmThreadCharacteristics(mmcss);
     } while (false);
-    if (FAILED(hr) && engine->state.load() != 0) fail(engine, "WASAPI route stopped or became unavailable");
+    if (FAILED(hr) && engine->state.load() != 0) {
+        char detail[180];
+        std::snprintf(detail, sizeof detail, "WASAPI stopped (0x%08lx). Check selected devices and microphone privacy settings; then Rescan.",
+                      static_cast<unsigned long>(hr));
+        fail(engine, detail);
+    }
 }
 }
 #endif
@@ -244,10 +259,11 @@ extern "C" {
 MLDevices *ml_devices_create(char *error, uint32_t capacity) {
     copy_error(error, capacity, "");
     try {
-        auto result = new MLDevices;
+        auto result = std::make_unique<MLDevices>();
 #ifdef _WIN32
         HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        if (FAILED(com)) { delete result; copy_error(error, capacity, "COM initialization failed"); return nullptr; }
+        if (FAILED(com)) { copy_error(error, capacity, "COM initialization failed"); return nullptr; }
+        struct COMGuard { ~COMGuard() { CoUninitialize(); } } comGuard;
         ComPtr<IMMDeviceEnumerator> enumerator;
         HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
         for (EDataFlow flow : {eCapture, eRender}) {
@@ -257,10 +273,9 @@ MLDevices *ml_devices_create(char *error, uint32_t capacity) {
             for (UINT i = 0; i < count; ++i) { ComPtr<IMMDevice> d; Device info;
                 if (SUCCEEDED(collection->Item(i, &d)) && endpoint_info(d.Get(), flow, info)) result->values.push_back(std::move(info)); }
         }
-        CoUninitialize();
-        if (FAILED(hr)) { delete result; copy_error(error, capacity, "Audio endpoint enumeration failed"); return nullptr; }
+        if (FAILED(hr)) { copy_error(error, capacity, "Audio endpoint enumeration failed"); return nullptr; }
 #endif
-        return result;
+        return result.release();
     } catch (...) { copy_error(error, capacity, "Out of memory enumerating devices"); return nullptr; }
 }
 void ml_devices_destroy(MLDevices *d) { delete d; }
@@ -300,7 +315,7 @@ int ml_engine_start(MLEngine *e, const char *input, const char *output, uint32_t
         if (e->worker.joinable() || e->state.load() != 0) return 0;
 #ifdef _WIN32
         std::wstring in = wide(input), out = wide(output); if (in.empty() || out.empty()) return 0;
-        ResetEvent(e->cancel); e->state.store(1);
+        ResetEvent(e->cancel); e->underruns.store(0); e->overruns.store(0); e->state.store(1);
         e->worker = std::thread([e, in = std::move(in), out = std::move(out), channel]() mutable {
             try { run_engine(e, std::move(in), std::move(out), channel); }
             catch (...) { fail(e, "Unexpected audio worker failure"); }
@@ -331,13 +346,21 @@ int ml_audio_self_test(char *error, uint32_t capacity) {
         return std::sqrt(sum/ml::kRate); };
     if (!check(response(20) < .20 && response(4000) > .65, "high-pass frequency response failed")) return 0;
     for (double ppm : {-500.0, 500.0}) { ml::ClockFIFO fifo; fifo.prime(); double produced=0;
-        for (uint32_t i=0;i<180*ml::kRate;i++) { produced += 1.0 + ppm/1000000.0; while(produced>=1) { if(!fifo.push(.1f)) break; produced-=1; }
-            float v; if(!fifo.pull(v)) { copy_error(error,capacity,"clock FIFO underrun"); return 0; } }
-        if (!check(fifo.size()>100 && fifo.size()<ml::kRingFrames-100, "clock FIFO drift was unbounded")) return 0; }
+        float v = 0;
+        for (uint32_t i=0;i<180*ml::kRate;i++) { produced += 1.0 + ppm/1000000.0; while(produced>=1) {
+                if(!fifo.push(.1f)) { copy_error(error, capacity, "clock FIFO overrun"); return 0; } produced-=1; }
+            if(!fifo.pull(v)) { copy_error(error,capacity,"clock FIFO underrun"); return 0; } }
+        if (!check(fifo.size()>1000 && fifo.size()<3100 && std::fabs(v-.1f)<.0001f &&
+                   std::fabs(fifo.ratio() - (1+ppm/1000000)) < .00002,
+                   "clock FIFO did not converge to the producer rate")) return 0; }
     std::array<float, ml::kMaxBlock*3> asymmetric{}; for(uint32_t i=0;i<ml::kMaxBlock;i++){ asymmetric[i*3]=.1f; asymmetric[i*3+1]=.3f; asymmetric[i*3+2]=-.8f; }
-    double squares=0; float peak=0; for(uint32_t i=0;i<ml::kMaxBlock;i++){ float selected=asymmetric[i*3+1]; squares+=selected*selected; peak=std::max(peak,std::fabs(selected)); }
+    double squares=0; float peak=0; for(uint32_t i=0;i<ml::kMaxBlock;i++){ float selected=ml::select_sample(asymmetric.data(),i,3,1,false); squares+=selected*selected; peak=std::max(peak,std::fabs(selected)); }
     if (!check(std::fabs(std::sqrt(squares/ml::kMaxBlock)-.3)<.0001 && std::fabs(peak-.3)<.0001,
                "asymmetric channel selection or meter expectation failed")) return 0;
+    if (!check(ml::select_sample(asymmetric.data(), ml::kMaxBlock-1, 3, 2, false) == -.8f &&
+               ml::select_sample(asymmetric.data(), 0, 3, 3, false) == 0 &&
+               ml::select_sample(nullptr, 0, 3, 1, true) == 0,
+               "last channel, invalid channel or silent packet failed")) return 0;
     return 1;
 }
 }

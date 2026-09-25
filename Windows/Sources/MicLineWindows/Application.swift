@@ -56,7 +56,7 @@ private struct Ballistics {
 }
 
 private func wide<R>(_ value: String, _ body: (UnsafePointer<WCHAR>) -> R) -> R {
-    var units = Array(value.utf16) + [0]
+    let units = Array(value.utf16) + [0]
     return units.withUnsafeBufferPointer { body($0.baseAddress!) }
 }
 
@@ -72,6 +72,9 @@ private final class App {
     var lastState: Int32 = -1
     var inputBallistics = Ballistics(), outputBallistics = Ballistics()
     var tray = NOTIFYICONDATAW(), trayReady = false, quitting = false
+    var font: HFONT?
+    let scale = Double(GetDpiForSystem()) / 96
+    private func px(_ value: Int32) -> Int32 { Int32((Double(value) * scale).rounded()) }
 
     init(fixture: String?) {
         self.fixture = fixture
@@ -82,7 +85,10 @@ private final class App {
         }
     }
 
-    deinit { if let engine { ml_engine_stop(engine); ml_engine_destroy(engine) } }
+    deinit {
+        if let engine { ml_engine_stop(engine); ml_engine_destroy(engine) }
+        if let font { _ = DeleteObject(font) }
+    }
 
     static var settingsURL: URL? {
         ProcessInfo.processInfo.environment["LOCALAPPDATA"].map {
@@ -91,7 +97,9 @@ private final class App {
     }
 
     static func load() -> Settings {
-        guard let url = settingsURL, let data = try? Data(contentsOf: url), data.count <= 65_536,
+        guard let url = settingsURL, let handle = try? FileHandle(forReadingFrom: url) else { return Settings() }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 65_537), data.count <= 65_536,
               var result = try? JSONDecoder().decode(Settings.self, from: data) else { return Settings() }
         result.validate(); return result
     }
@@ -115,10 +123,12 @@ private final class App {
         guard atom != 0 || GetLastError() == DWORD(ERROR_CLASS_ALREADY_EXISTS) else { return false }
         window = wide(className) { klass in wide(title) { name in
             CreateWindowExW(0, klass, name, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX),
-                Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), 620, 560, nil, nil, GetModuleHandleW(nil), nil)
+                Int32(CW_USEDEFAULT), Int32(CW_USEDEFAULT), px(620), px(590), nil, nil, GetModuleHandleW(nil), nil)
         }}
         guard let window else { return false }
-        controls(); _ = SetTimer(window, 1, 100, nil); trayReady = addTray()
+        font = wide("Segoe UI") { CreateFontW(-px(15), 0, 0, 0, FW_NORMAL, 0, 0, 0,
+            DWORD(DEFAULT_CHARSET), DWORD(OUT_DEFAULT_PRECIS), DWORD(CLIP_DEFAULT_PRECIS), DWORD(DEFAULT_QUALITY), 0, $0) }
+        controls(); applyControls(); _ = SetTimer(window, 1, 100, nil); trayReady = addTray()
         fixture == nil ? scan() : loadFixture()
         ShowWindow(window, SW_SHOW); _ = UpdateWindow(window); return true
     }
@@ -126,16 +136,18 @@ private final class App {
     private func add(_ id: ID, _ kind: String, _ title: String, _ style: DWORD,
                      _ x: Int32, _ y: Int32, _ w: Int32, _ h: Int32) {
         views[id] = wide(kind) { klass in wide(title) { text in
-            CreateWindowExW(0, klass, text, DWORD(WS_CHILD | WS_VISIBLE) | style, x, y, w, h,
+            CreateWindowExW(0, klass, text, DWORD(WS_CHILD | WS_VISIBLE) | style, px(x), px(y), px(w), px(h),
                 window, HMENU(bitPattern: UInt(Int(id.rawValue))), GetModuleHandleW(nil), nil)
         }}
+        if let font { _ = SendMessageW(views[id]!, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: font)), 1) }
     }
 
     private func label(_ text: String, _ y: Int32, _ width: Int32 = 120) {
-        _ = wide("STATIC") { kind in wide(text) { value in
-            CreateWindowExW(0, kind, value, DWORD(WS_CHILD | WS_VISIBLE), 24, y, width, 22,
+        let label = wide("STATIC") { kind in wide(text) { value in
+            CreateWindowExW(0, kind, value, DWORD(WS_CHILD | WS_VISIBLE), px(24), px(y), px(width), px(22),
                 window, nil, GetModuleHandleW(nil), nil)
         }}
+        if let font { _ = SendMessageW(label, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: font)), 1) }
     }
 
     private func controls() {
@@ -145,11 +157,11 @@ private final class App {
         add(.cableHelp, "BUTTON", "Get VB-CABLE", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 330, 137, 130, 28)
         add(.rescan, "BUTTON", "Rescan", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 470, 137, 105, 28)
         label("Input level (RMS / sample peak)", 183, 250)
-        add(.inputMeter, "msctls_progress32", "", 0, 24, 208, 430, 18)
-        add(.inputText, "STATIC", "-90 / -90 dBFS", DWORD(SS_RIGHT), 460, 204, 115, 22)
+        add(.inputMeter, "msctls_progress32", "", 0, 24, 208, 350, 18)
+        add(.inputText, "STATIC", "-90 / -90 dBFS", DWORD(SS_RIGHT), 380, 204, 195, 22)
         label("Output level (RMS / sample peak)", 237, 250)
-        add(.outputMeter, "msctls_progress32", "", 0, 24, 262, 430, 18)
-        add(.outputText, "STATIC", "-90 / -90 dBFS", DWORD(SS_RIGHT), 460, 258, 115, 22)
+        add(.outputMeter, "msctls_progress32", "", 0, 24, 262, 350, 18)
+        add(.outputText, "STATIC", "-90 / -90 dBFS", DWORD(SS_RIGHT), 380, 258, 195, 22)
         label("Input gain", 306); add(.gain, "msctls_trackbar32", "", DWORD(TBS_AUTOTICKS | WS_TABSTOP), 150, 296, 330, 35)
         add(.gainText, "STATIC", "0 dB", DWORD(SS_RIGHT), 490, 305, 85, 22)
         add(.lowCut, "BUTTON", "Low cut", DWORD(BS_AUTOCHECKBOX | WS_TABSTOP), 24, 350, 110, 25)
@@ -157,9 +169,9 @@ private final class App {
         add(.cutoffText, "STATIC", "80 Hz", DWORD(SS_RIGHT), 490, 350, 85, 22)
         add(.bypass, "BUTTON", "Bypass low cut", DWORD(BS_AUTOCHECKBOX | WS_TABSTOP), 24, 390, 170, 25)
         add(.privacyHelp, "BUTTON", "Microphone privacy settings", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 330, 387, 245, 28)
-        add(.status, "STATIC", "Stopped", 0, 24, 435, 551, 36)
-        add(.start, "BUTTON", "Start", DWORD(BS_DEFPUSHBUTTON | WS_TABSTOP), 335, 485, 110, 32)
-        add(.quit, "BUTTON", "Quit", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 465, 485, 110, 32)
+        add(.status, "STATIC", "Stopped", 0, 24, 430, 551, 58)
+        add(.start, "BUTTON", "Start", DWORD(BS_DEFPUSHBUTTON | WS_TABSTOP), 335, 500, 110, 32)
+        add(.quit, "BUTTON", "Quit", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 465, 500, 110, 32)
         _ = SendMessageW(views[.gain]!, UINT(TBM_SETRANGE), 1, LPARAM(36 << 16))
         _ = SendMessageW(views[.cutoff]!, UINT(TBM_SETRANGE), 1, LPARAM(280 << 16))
         _ = SendMessageW(views[.gain]!, UINT(TBM_SETPOS), 1, LPARAM(Int(settings.gainDB + 24)))
@@ -229,7 +241,9 @@ private final class App {
     }
 
     func start() {
-        guard fixture == nil, let engine, let input = selectedInput, let output = selectedOutput else { return }
+        guard fixture == nil else { return }
+        guard let engine else { status("Audio initialization failed. Quit and reopen MicLine."); return }
+        guard let input = selectedInput, let output = selectedOutput else { status(missingMessage); return }
         settings.inputID = input.id; settings.outputID = output.id
         settings.channel = max(0, Int(SendMessageW(views[.channel]!, UINT(CB_GETCURSEL), 0, 0))); applyControls()
         let accepted = input.id.utf8CString.withUnsafeBufferPointer { a in
@@ -263,6 +277,7 @@ private final class App {
             if state == 3 {
                 var error = [CChar](repeating: 0, count: 512)
                 error.withUnsafeMutableBufferPointer { ml_engine_error(engine, $0.baseAddress, UInt32($0.count)) }
+                stop(nil)
                 status(error[0] == 0 ? "Audio stopped with an error. Check microphone privacy settings." : "Stopped — \(String(cString: error))")
                 running(false)
             }
@@ -325,6 +340,9 @@ private let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
         if id == .cableHelp { app.open("https://vb-audio.com/Cable/") }; if id == .privacyHelp { app.open("ms-settings:privacy-microphone") }
         if id == .input && high(wParam) == CBN_SELCHANGE { app.settings.inputID = app.selectedInput?.id; app.settings.channel = 0; app.populateChannels() }
         if id == .output && high(wParam) == CBN_SELCHANGE { app.settings.outputID = app.selectedOutput?.id }
+        if id == .channel && high(wParam) == CBN_SELCHANGE {
+            app.settings.channel = max(0, Int(SendMessageW(app.views[.channel]!, UINT(CB_GETCURSEL), 0, 0)))
+        }
         return 0
     case UINT(WM_HSCROLL): app.applyControls(); return 0
     case UINT(WM_TIMER): app.poll(); return 0
@@ -344,6 +362,7 @@ enum Application {
     static func main() {
         let args = CommandLine.arguments
         if args.contains("--self-test") { exit(selfTest()) }
+        _ = SetProcessDPIAware()
         let fixture = args.firstIndex(of: "--fixture").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
         if let fixture, !["empty", "configured", "active", "recovery"].contains(fixture) { print("Unknown fixture: \(fixture)"); exit(2) }
         let mutex = wide("Local\\MicLine.Windows.Singleton") { CreateMutexW(nil, false, $0) }
