@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Linux orbs support static checks, not MicLine's macOS 27 app/toolchain.
+# Linux orbs support static checks and portable Windows DSP tests, not native UI.
 [[ "$(uname -s)/$(uname -m)" == Linux/x86_64 ]] || {
     echo 'MicLine orb setup requires Linux x86_64.' >&2
     exit 1
@@ -9,7 +9,7 @@ set -euo pipefail
 started=$SECONDS
 echo '[setup] Checking Debian prerequisites'
 missing=()
-for package in ca-certificates curl git jq python3 shellcheck tar; do
+for package in ca-certificates curl g++ git jq python3 shellcheck tar; do
     if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != 'install ok installed' ]]; then
         missing+=("$package")
     fi
@@ -52,5 +52,5 @@ install_tool gitleaks 8.30.1 version \
     https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
     551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
-echo "[setup] Ready for Linux static checks ($((SECONDS - started))s total)."
-echo '[setup] Swift builds/tests, Sparkle fixtures, signing and UI/audio require macOS 27 + Xcode 27.'
+echo "[setup] Ready for Linux static checks and portable DSP tests ($((SECONDS - started))s total)."
+echo '[setup] Native Windows builds require Windows CI; macOS builds require macOS 27 + Xcode 27.'

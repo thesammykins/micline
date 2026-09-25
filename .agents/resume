@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # No services or authentication need repair. Never install during resume.
-for tool in git curl jq python3 shellcheck actionlint gitleaks; do
+for tool in git curl g++ jq python3 shellcheck actionlint gitleaks; do
     command -v "$tool" >/dev/null || {
         echo "[resume] Missing $tool; run .agents/setup to repair this orb." >&2
         exit 1
     }
 done
-echo '[resume] Linux static-check tools ready; native builds/tests require macOS 27 + Xcode 27.'
+echo '[resume] Static-check and DSP tools ready; native builds need Windows CI or macOS 27 + Xcode 27.'
