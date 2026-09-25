@@ -9,12 +9,6 @@ try {
     New-Item -ItemType Directory -Force $payload | Out-Null
     Copy-Item "$bin/MicLine.exe" $payload
     $exe = Join-Path $payload 'MicLine.exe'
-    & mt.exe -nologo -manifest MicLine.manifest "-outputresource:$exe;#1"
-    if ($LASTEXITCODE -ne 0) { throw 'Could not embed Windows manifest' }
-    # SwiftPM builds a console entry point; retain that entry and suppress a console
-    # window for desktop launches. Self-tests still return an observable exit code.
-    & editbin.exe /SUBSYSTEM:WINDOWS $exe
-    if ($LASTEXITCODE -ne 0) { throw 'Could not set desktop subsystem' }
 
     $runtimeDirs = @($bin) + @($env:Path -split ';' | Where-Object { $_ -and (Test-Path $_) })
     $crt = Get-ChildItem (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1

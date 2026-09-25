@@ -39,8 +39,9 @@ jobs:
           swift build -c release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $bin = swift build -c release --show-bin-path
-          & "$bin/MicLine.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $test = Start-Process "$bin/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
+          if ($test.ExitCode -ne 0) { throw "Offline self-test failed: $($test.ExitCode)" }
+          Write-Host 'Native Swift/DSP offline self-test passed'
       - name: Package app-local runtimes and installer
         run: ./Windows/package.ps1
       - name: Exercise native desktop fixtures without microphone access

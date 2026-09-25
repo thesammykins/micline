@@ -11,6 +11,10 @@ let package = Package(
         .executableTarget(name: "MicLineWindows", dependencies: ["WindowsAudio"], linkerSettings: [
             .linkedLibrary("user32"), .linkedLibrary("gdi32"),
             .linkedLibrary("shell32"), .linkedLibrary("comctl32"),
+            // Link a desktop image directly; post-link PE rewriting can corrupt
+            // the Swift/LLVM-produced executable's import table.
+            .unsafeFlags(["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup",
+                          "-Xlinker", "/MANIFEST:EMBED", "-Xlinker", "/MANIFESTINPUT:MicLine.manifest"]),
         ]),
     ],
     swiftLanguageModes: [.v5],
