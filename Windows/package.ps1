@@ -22,11 +22,13 @@ try {
     $runtimeDirs = @($crt.FullName) + $runtimeDirs
     $pending = [System.Collections.Generic.Queue[string]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    # Swift also installs LLVM inspection tools; use the MSVC PE dependency reader.
+    $dumpbin = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64/dumpbin.exe'
     $pending.Enqueue($exe)
     while ($pending.Count) {
         $binary = $pending.Dequeue()
-        $imports = & dumpbin.exe /DEPENDENTS $binary
-        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $binary" }
+        $imports = & $dumpbin /DEPENDENTS $binary 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect ${binary}: $($imports -join [Environment]::NewLine)" }
         foreach ($line in $imports) {
             if ($line -notmatch '^\s+([\w.+-]+\.dll)\s*$') { continue }
             $name = $Matches[1]
