@@ -368,7 +368,7 @@ enum Application {
         let audio = error.withUnsafeMutableBufferPointer { ml_audio_self_test($0.baseAddress, UInt32($0.count)) }
         var s = Settings(inputID: String(repeating: "x", count: 3000), outputID: "", channel: -1, gainDB: .infinity, lowCut: true, cutoffHz: 999, bypass: false); s.validate()
         let swift = s.inputID == nil && s.outputID == nil && s.channel == 0 && s.gainDB == 0 && s.cutoffHz == 300 && LevelMath.peak(0) == -90 && abs(LevelMath.rms(1) - 3.0103) < 0.001
-        if audio != 0 || !swift { print("MicLine self-test failed: \(audio != 0 && error[0] != 0 ? String(cString: error) : "Swift boundary checks")"); return 1 }
+        if audio == 0 || !swift { print("MicLine self-test failed: \(audio == 0 && error[0] != 0 ? String(cString: error) : "Swift boundary checks")"); return 1 }
         print("MicLine self-test passed: audio DSP; settings bounds; level math"); return 0
     }
 }
