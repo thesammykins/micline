@@ -21,6 +21,19 @@ Function .onInit
     MessageBox MB_ICONSTOP "This build requires Windows 11 x64."
     Abort
   ${EndIf}
+  FindWindow $0 "MicLine.Windows"
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP "Quit MicLine from its tray menu before installing."
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function un.onInit
+  FindWindow $0 "MicLine.Windows"
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP "Quit MicLine from its tray menu before uninstalling."
+    Abort
+  ${EndIf}
 FunctionEnd
 
 Section "MicLine" Main

@@ -58,3 +58,23 @@ foreach ($state in 'empty','configured','active','recovery') {
         $process.Dispose()
     }
 }
+
+# Exercise the installer on this disposable CI user. Preserve an unrelated file
+# to ensure uninstall never recursively removes user content at the chosen path.
+$installDir = Join-Path $env:RUNNER_TEMP 'MicLine-install-test'
+New-Item -ItemType Directory -Force $installDir | Out-Null
+Set-Content (Join-Path $installDir 'keep.txt') 'unrelated test data'
+$setup = Start-Process "$PSScriptRoot/dist/MicLine-Windows-x64-Setup.exe" -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+$savedPath = $env:Path
+try {
+    $env:Path = "$env:WINDIR\System32;$env:WINDIR"
+    $check = Start-Process "$installDir/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
+    if ($check.ExitCode -ne 0) { throw 'Installed app offline self-test failed' }
+    $smoke = Start-Process "$installDir/MicLine.exe" -ArgumentList '--smoke' -PassThru
+    if (!$smoke.WaitForExit(15000) -or $smoke.ExitCode -ne 0) { throw 'Installed stopped-app smoke test failed' }
+} finally { $env:Path = $savedPath }
+$uninstall = Start-Process "$installDir/Uninstall.exe" -ArgumentList '/S', "_?=$installDir" -Wait -PassThru
+if ($uninstall.ExitCode -ne 0 -or (Test-Path "$installDir/MicLine.exe")) { throw 'Uninstall failed' }
+if (!(Test-Path "$installDir/keep.txt")) { throw 'Uninstall deleted unrelated data' }
+Write-Host 'Per-user install, stopped launch, offline self-test and safe uninstall passed'
