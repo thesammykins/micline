@@ -23,7 +23,7 @@ function Read-Text($handle) {
     [void][DesktopProbe]::GetWindowText($handle, $text, $text.Capacity)
     return $text.ToString()
 }
-foreach ($state in 'empty','configured','active','recovery') {
+foreach ($state in 'empty','configured','active','recovery','channel-recovery') {
     $process = Start-Process $Exe -ArgumentList '--fixture', $state -PassThru
     try {
         $window = [IntPtr]::Zero
@@ -36,8 +36,12 @@ foreach ($state in 'empty','configured','active','recovery') {
         }
         if ($window -eq [IntPtr]::Zero) { throw "Fixture $state has no native window" }
         $status = Read-Text ([DesktopProbe]::GetDlgItem($window, 117))
-        $expected = switch ($state) { empty {'No input endpoints'} configured {'Ready'} active {'synthetic fixture'} recovery {'unavailable'} }
+        $expected = switch ($state) { empty {'No input endpoints'} configured {'Ready'} active {'synthetic fixture'} recovery {'unavailable'} channel-recovery {'choose an available input channel'} }
         if (!$status.Contains($expected)) { throw "Incorrect $state status: $status" }
+        if ($state -eq 'channel-recovery') {
+            $selected = [DesktopProbe]::SendMessage([DesktopProbe]::GetDlgItem($window, 102), 0x147, [IntPtr]::Zero, [IntPtr]::Zero)
+            if ($selected.ToInt64() -ne -1) { throw 'Missing saved channel silently selected a fallback' }
+        }
         $routeEnabled = [DesktopProbe]::IsWindowEnabled([DesktopProbe]::GetDlgItem($window, 101))
         if ($routeEnabled -eq ($state -eq 'active')) { throw 'Route enablement contradicts processing state' }
         $rect = [DesktopProbe+RECT]::new()

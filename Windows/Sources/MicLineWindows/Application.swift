@@ -206,6 +206,7 @@ private final class App {
         case "empty": devices = []; populate(); status("No input endpoints found. Connect a microphone and Rescan.")
         case "active": status("Processing — synthetic fixture; no microphone is open."); running(true); meters(-18.4, -10.2, -20.1, -12)
         case "recovery": settings.inputID = "missing"; populate(); status("Stopped — saved microphone is unavailable.")
+        case "channel-recovery": settings.channel = 7; populate(); status(missingMessage)
         default: status("Ready — press Start to begin processing.")
         }
     }
@@ -223,8 +224,10 @@ private final class App {
         _ = SendMessageW(views[.channel]!, UINT(CB_RESETCONTENT), 0, 0)
         guard let input = selectedInput else { return }
         for i in 0..<input.channels { wide("Channel \(i + 1)") { _ = SendMessageW(views[.channel]!, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) } }
-        settings.channel = min(settings.channel, max(0, Int(input.channels) - 1))
-        _ = SendMessageW(views[.channel]!, UINT(CB_SETCURSEL), WPARAM(settings.channel), 0)
+        // A changed channel layout must not silently select another microphone channel.
+        if settings.channel < Int(input.channels) {
+            _ = SendMessageW(views[.channel]!, UINT(CB_SETCURSEL), WPARAM(settings.channel), 0)
+        }
     }
 
     var inputs: [Device] { devices.filter(\.isInput) }
@@ -234,17 +237,18 @@ private final class App {
     private func selection(_ id: ID, _ list: [Device]) -> Device? {
         let i = Int(SendMessageW(views[id]!, UINT(CB_GETCURSEL), 0, 0)); return list.indices.contains(i) ? list[i] : nil
     }
-    var ready: Bool { selectedInput != nil && selectedOutput != nil }
+    var ready: Bool { selectedInput != nil && selectedOutput != nil && SendMessageW(views[.channel]!, UINT(CB_GETCURSEL), 0, 0) >= 0 }
     var missingMessage: String {
         if settings.inputID != nil && selectedInput == nil { return "Stopped — saved microphone is unavailable." }
         if settings.outputID != nil && selectedOutput == nil { return "Stopped — saved VB-CABLE output is unavailable." }
+        if selectedInput != nil && SendMessageW(views[.channel]!, UINT(CB_GETCURSEL), 0, 0) < 0 { return "Stopped — choose an available input channel." }
         return "Stopped — choose a microphone and VB-CABLE output."
     }
 
     func start() {
         guard fixture == nil else { return }
         guard let engine else { status("Audio initialization failed. Quit and reopen MicLine."); return }
-        guard let input = selectedInput, let output = selectedOutput else { status(missingMessage); return }
+        guard ready, let input = selectedInput, let output = selectedOutput else { status(missingMessage); return }
         settings.inputID = input.id; settings.outputID = output.id
         settings.channel = max(0, Int(SendMessageW(views[.channel]!, UINT(CB_GETCURSEL), 0, 0))); applyControls()
         let accepted = input.id.utf8CString.withUnsafeBufferPointer { a in
@@ -369,7 +373,7 @@ enum Application {
         if args.contains("--self-test") { exit(selfTest()) }
         _ = SetProcessDPIAware()
         let fixture = args.firstIndex(of: "--fixture").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
-        if let fixture, !["empty", "configured", "active", "recovery"].contains(fixture) { print("Unknown fixture: \(fixture)"); exit(2) }
+        if let fixture, !["empty", "configured", "active", "recovery", "channel-recovery"].contains(fixture) { print("Unknown fixture: \(fixture)"); exit(2) }
         let mutex = wide("Local\\MicLine.Windows.Singleton") { CreateMutexW(nil, false, $0) }
         if GetLastError() == DWORD(ERROR_ALREADY_EXISTS) {
             wide(className) { if let old = FindWindowW($0, nil) { ShowWindow(old, SW_SHOW); _ = SetForegroundWindow(old) } }
