@@ -39,7 +39,15 @@ jobs:
           swift build -c release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $bin = swift build -c release --show-bin-path
-          $test = Start-Process "$bin/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
+          try {
+            $test = Start-Process "$bin/MicLine.exe" -ArgumentList '--self-test' -Wait -PassThru
+          } catch {
+            & mt.exe -nologo "-inputresource:$bin/MicLine.exe;#1" -out:embedded.manifest
+            if (Test-Path embedded.manifest) { Get-Content embedded.manifest }
+            Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='SideBySide'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction Continue |
+              Select-Object -First 3 -ExpandProperty Message
+            throw
+          }
           if ($test.ExitCode -ne 0) { throw "Offline self-test failed: $($test.ExitCode)" }
           Write-Host 'Native Swift/DSP offline self-test passed'
       - name: Package app-local runtimes and installer
