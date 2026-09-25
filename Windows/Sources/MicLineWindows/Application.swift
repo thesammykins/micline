@@ -119,7 +119,7 @@ private final class App {
         wc.style = UINT(CS_HREDRAW | CS_VREDRAW); wc.lpfnWndProc = windowProc
         // MAKEINTRESOURCE macros are unavailable through Swift's Windows importer.
         wc.hInstance = GetModuleHandleW(nil); wc.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 32512))
-        wc.hbrBackground = HBRUSH(bitPattern: UInt(COLOR_WINDOW + 1))
+        wc.hbrBackground = HBRUSH(bitPattern: UInt(COLOR_BTNFACE + 1))
         let atom = wide(className) { wc.lpszClassName = $0; return RegisterClassW(&wc) }
         guard atom != 0 || GetLastError() == DWORD(ERROR_CLASS_ALREADY_EXISTS) else { return false }
         window = wide(className) { klass in wide(title) { name in
@@ -163,10 +163,10 @@ private final class App {
         label("Output level (RMS / sample peak)", 237, 250)
         add(.outputMeter, "msctls_progress32", "", 0, 24, 262, 350, 18)
         add(.outputText, "STATIC", "-90 / -90 dBFS", DWORD(SS_RIGHT), 380, 258, 195, 22)
-        label("Input gain", 306); add(.gain, "msctls_trackbar32", "", DWORD(TBS_AUTOTICKS | WS_TABSTOP), 150, 296, 330, 35)
+        label("Input gain", 306); add(.gain, "msctls_trackbar32", "", DWORD(TBS_NOTICKS | WS_TABSTOP), 150, 296, 330, 35)
         add(.gainText, "STATIC", "0 dB", DWORD(SS_RIGHT), 490, 305, 85, 22)
         add(.lowCut, "BUTTON", "Low cut", DWORD(BS_AUTOCHECKBOX | WS_TABSTOP), 24, 350, 110, 25)
-        add(.cutoff, "msctls_trackbar32", "", DWORD(TBS_AUTOTICKS | WS_TABSTOP), 150, 342, 330, 35)
+        add(.cutoff, "msctls_trackbar32", "", DWORD(TBS_NOTICKS | WS_TABSTOP), 150, 342, 330, 35)
         add(.cutoffText, "STATIC", "80 Hz", DWORD(SS_RIGHT), 490, 350, 85, 22)
         add(.bypass, "BUTTON", "Bypass low cut", DWORD(BS_AUTOCHECKBOX | WS_TABSTOP), 24, 390, 170, 25)
         add(.privacyHelp, "BUTTON", "Microphone privacy settings", DWORD(BS_PUSHBUTTON | WS_TABSTOP), 330, 387, 245, 28)

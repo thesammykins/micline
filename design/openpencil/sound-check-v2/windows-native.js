@@ -25,10 +25,10 @@ const states = [
 ];
 for (let i=0;i<states.length;i++) {
   const [name,input,status] = states[i];
-  const frame = box(page,`Windows / ${name}`,i*680,0,620,590);
+  const frame = box(page,`Windows / ${name}`,i*680,0,620,590,'#F0F0F0');
   const title = box(frame,'Native Windows titlebar',0,0,620,32,'#F3F3F3');
   text(title,'MicLine — Windows test build',16,7,430,14); text(title,'−     □     ×',510,7,105,14);
-  const body = box(frame,'Route · Levels · Controls',0,32,604,550);
+  const body = box(frame,'Route · Levels · Controls',0,32,604,550,'#F0F0F0');
   text(body,'Microphone',24,22,120); control(body,input,150,18,425);
   text(body,'Input channel',24,62,120); control(body,input?'Channel 1':'',150,58,160);
   text(body,'Virtual output',24,102,120); control(body,name==='Empty'?'':'CABLE Input (VB-Audio Virtual Cable)',150,98,425);
