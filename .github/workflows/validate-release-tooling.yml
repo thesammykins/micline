@@ -65,6 +65,7 @@ jobs:
 
 
   build-test:
+    if: ${{ github.ref != 'refs/heads/windows/main' && github.head_ref != 'windows/main' }}
     runs-on: xcode-27
     timeout-minutes: 20
     steps:

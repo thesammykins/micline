@@ -1,0 +1,45 @@
+name: Windows desktop test build
+
+on:
+  push:
+    branches: ['windows/main']
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Configure native x64 tools
+        uses: seanmiddleditch/gha-setup-vsdevenv@cf96bf5b227cac6af28c04c4a4e69286ea444163 # v5
+        with:
+          arch: x64
+      - name: Install official Swift toolchain
+        uses: compnerd/gha-setup-swift@581df1ffa3f3e786ddc73ff37364ee231f9644c5 # v0.3.0
+        with:
+          source: swift.org
+          swift-version: swift-6.2.3-release
+          swift-build: 6.2.3-RELEASE
+          build_arch: amd64
+          cache: true
+      - name: Compile native Windows executable
+        working-directory: Windows
+        run: |
+          swift --version
+          swift build -c release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin = swift build -c release --show-bin-path
+          & "$bin/MicLine.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
