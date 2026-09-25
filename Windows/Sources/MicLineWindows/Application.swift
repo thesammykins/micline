@@ -117,7 +117,8 @@ private final class App {
     func create(title: String) -> Bool {
         var wc = WNDCLASSW()
         wc.style = UINT(CS_HREDRAW | CS_VREDRAW); wc.lpfnWndProc = windowProc
-        wc.hInstance = GetModuleHandleW(nil); wc.hCursor = LoadCursorW(nil, IDC_ARROW)
+        // MAKEINTRESOURCE macros are unavailable through Swift's Windows importer.
+        wc.hInstance = GetModuleHandleW(nil); wc.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 32512))
         wc.hbrBackground = HBRUSH(bitPattern: UInt(COLOR_WINDOW + 1))
         let atom = wide(className) { wc.lpszClassName = $0; return RegisterClassW(&wc) }
         guard atom != 0 || GetLastError() == DWORD(ERROR_CLASS_ALREADY_EXISTS) else { return false }
@@ -303,7 +304,7 @@ private final class App {
     private func addTray() -> Bool {
         tray.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size); tray.hWnd = window; tray.uID = 1
         tray.uFlags = UINT(NIF_MESSAGE | NIF_ICON | NIF_TIP); tray.uCallbackMessage = trayMessage
-        tray.hIcon = LoadIconW(nil, IDI_APPLICATION)
+        tray.hIcon = LoadIconW(nil, UnsafePointer<WCHAR>(bitPattern: 32512))
         let value = Array("MicLine".utf16) + [0]
         withUnsafeMutableBytes(of: &tray.szTip) { destination in value.withUnsafeBytes { destination.copyBytes(from: $0.prefix(destination.count)) } }
         return Shell_NotifyIconW(DWORD(NIM_ADD), &tray)
@@ -311,11 +312,12 @@ private final class App {
 
     func trayMenu() {
         let menu = CreatePopupMenu()
-        wide("Show") { _ = AppendMenuW(menu, UINT(MF_STRING), 1, $0) }; wide("Pause") { _ = AppendMenuW(menu, UINT(MF_STRING), 2, $0) }
-        _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil); wide("Quit") { _ = AppendMenuW(menu, UINT(MF_STRING), 3, $0) }
+        wide("Show") { _ = AppendMenuW(menu, UINT(MF_STRING), 201, $0) }; wide("Pause") { _ = AppendMenuW(menu, UINT(MF_STRING), 202, $0) }
+        _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil); wide("Quit") { _ = AppendMenuW(menu, UINT(MF_STRING), 203, $0) }
         var p = POINT(); _ = GetCursorPos(&p); _ = SetForegroundWindow(window)
-        let choice = TrackPopupMenu(menu, UINT(TPM_RETURNCMD | TPM_RIGHTBUTTON), p.x, p.y, 0, window, nil); _ = DestroyMenu(menu)
-        if choice == 1 { ShowWindow(window, SW_SHOW); _ = SetForegroundWindow(window) }; if choice == 2 { stop() }; if choice == 3 { quit() }
+        // Use WM_COMMAND: Swift imports the BOOL result as Bool, losing command IDs.
+        _ = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON), p.x, p.y, 0, window, nil); _ = DestroyMenu(menu)
+        _ = PostMessageW(window, UINT(WM_NULL), 0, 0)
     }
 
     func open(_ link: String) { wide(link) { _ = ShellExecuteW(window, nil, $0, nil, nil, SW_SHOWNORMAL) } }
@@ -334,6 +336,9 @@ private let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
     guard let app else { return DefWindowProcW(hwnd, message, wParam, lParam) }
     switch message {
     case UINT(WM_COMMAND):
+        if low(wParam) == 201 { ShowWindow(hwnd, SW_SHOW); _ = SetForegroundWindow(hwnd); return 0 }
+        if low(wParam) == 202 { app.stop(); return 0 }
+        if low(wParam) == 203 { app.quit(); return 0 }
         guard let id = ID(rawValue: low(wParam)) else { break }
         if id == .start { app.lastState == 1 || app.lastState == 2 ? app.stop() : app.start() }
         if id == .rescan { app.rescan() }; if id == .quit { app.quit() }
@@ -346,7 +351,7 @@ private let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
         return 0
     case UINT(WM_HSCROLL): app.applyControls(); return 0
     case UINT(WM_TIMER): app.poll(); return 0
-    case UINT(WM_POWERBROADCAST): if wParam == WPARAM(PBT_APMSUSPEND) { app.stop("Paused after sleep. Press Start when ready.") }; return LRESULT(TRUE)
+    case UINT(WM_POWERBROADCAST): if wParam == WPARAM(PBT_APMSUSPEND) { app.stop("Paused after sleep. Press Start when ready.") }; return 1
     case trayMessage:
         if UINT(lParam) == UINT(WM_RBUTTONUP) || UINT(lParam) == UINT(WM_CONTEXTMENU) { app.trayMenu() }
         if UINT(lParam) == UINT(WM_LBUTTONDBLCLK) { ShowWindow(hwnd, SW_SHOW); _ = SetForegroundWindow(hwnd) }; return 0
@@ -376,7 +381,7 @@ enum Application {
         guard app!.create(title: fixture.map { "MicLine Fixture \($0)" } ?? "MicLine — Windows test build") else { print("Could not create MicLine window"); exit(1) }
         if args.contains("--smoke"), let window = app?.window { _ = SetTimer(window, 99, 2_000, { _, _, _, _ in app?.quit() }) }
         var message = MSG()
-        while GetMessageW(&message, nil, 0, 0) > 0 {
+        while GetMessageW(&message, nil, 0, 0) {
             if app?.window == nil || !IsDialogMessageW(app!.window, &message) { _ = TranslateMessage(&message); _ = DispatchMessageW(&message) }
         }
         app = nil
