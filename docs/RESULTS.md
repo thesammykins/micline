@@ -207,3 +207,38 @@ left stopped and existing route, gain and startup preferences were preserved.
 The feed publishes a 102,710-byte signed delta with a full archive fallback;
 the available runtime logs do not prove which download the installed update used.
 No local private release credentials were used for this acceptance test.
+
+## 1.1.1 CPU and window verification
+
+On 26 September 2026, macOS 27.0 (26A5425a), Xcode 27.0 (27A266a), the
+installed 1.1.0 spent roughly 35–40% CPU while processing with its windows closed.
+A five-second sample implicated SwiftUI/AppKit menu rendering; the audio render
+thread was mostly waiting. The menu-meter source matched tag v1.1.0, so rebuilding
+that tag without the fixes would retain the problem.
+
+A no-audio probe drove the production meter views with synthetic levels at 30 Hz.
+The original SwiftUI menu plus retained, closed meter window used 17.45% CPU over
+15 seconds. The final native status item, bounded image cache and visibility-gated
+meters used 1.59% over 45 seconds after closing the windows and exercising Settings.
+Physical footprint settled at 35.59 MiB at 30 seconds and 35.58 MiB at 60 seconds.
+CPU percentages represent one core. These are UI-only measurements, not a claim
+that the complete audio graph or third-party Audio Units use 1.59% CPU, nor a
+long-duration leak test. Raw local evidence is in `evidence/cpu-menu-meter/`.
+
+The final-source probe verified Settings becoming the frontmost app's key window
+on first opening, reopening, and opening from the native popover with the Dock
+icon hidden and main window closed. The signed development app, with an isolated
+QA bundle identity, also displayed the production Settings content and stopped
+main view correctly. Its processing remained stopped. A recorded synthetic meter
+showed coloured bars changing without moving the icon or its frame; the 5.85-second
+recording captured about 11.8 frames/second, so it does not establish display-rate
+smoothness. The final second includes the probe exiting and removing its item.
+
+All 52 Swift tests passed, including segment thresholds, bounded image reuse,
+hidden-view subscriptions and reopening with current readings. The signed build
+and strict signature verification passed. Audio routing and DSP code were not
+changed; paused device/recovery polling is now once per second (with tolerance)
+instead of 30 Hz, so recovery may wait for that next poll. No microphone PCM was
+recorded. The installed app was briefly interrupted during an earlier UI-tool
+identity mix-up and restored to its saved running route; subsequent QA used a
+separate bundle identity.

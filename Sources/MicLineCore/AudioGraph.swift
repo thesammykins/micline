@@ -14,9 +14,9 @@ public final class AudioGraph: ObservableObject {
     private var automaticSuspended = false
     private var recoveryAttempts = 0
     private var nextRecoveryTime = 0.0
-    @Published public private(set) var running = false
+    @Published public private(set) var running = false { didSet { updatePollingTimer() } }
     @Published public private(set) var monitoring = false
-    @Published public private(set) var checkingInput = false
+    @Published public private(set) var checkingInput = false { didSet { updatePollingTimer() } }
     @Published public private(set) var setupActive = false
     @Published public private(set) var loading = false
     @Published public var bypass = false { didSet { applyControls() } }
@@ -67,11 +67,7 @@ public final class AudioGraph: ObservableObject {
         } else { settings = SessionSettings() }
         refresh()
         diagnostics.record(.appOpened)
-        let meterTimer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.poll() }
-        }
-        Self.scheduleMeterTimer(meterTimer)
-        timer = meterTimer
+        updatePollingTimer()
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.shutdown() }
         }
@@ -81,6 +77,20 @@ public final class AudioGraph: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         // Event tracking is not guaranteed to be a common mode in every run loop.
         RunLoop.main.add(timer, forMode: .eventTracking)
+    }
+
+    private func updatePollingTimer() {
+        // Recovery and device discovery still run while stopped; only live
+        // metering needs 30 Hz. Do not keep idle graphs waking at the display rate.
+        let interval = running || checkingInput ? 1.0 / 30 : 1.0
+        guard timer?.timeInterval != interval else { return }
+        timer?.invalidate()
+        let next = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
+        }
+        next.tolerance = interval * 0.1
+        Self.scheduleMeterTimer(next)
+        timer = next
     }
 
     deinit {

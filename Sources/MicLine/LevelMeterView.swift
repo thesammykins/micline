@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import MicLineCore
 
@@ -136,71 +137,39 @@ struct MeterPanel: View {
 }
 
 struct LiveMeterPanel: View {
-    @ObservedObject var display: MeterDisplay
+    let display: MeterDisplay
     var compact = false
 
     var body: some View {
-        MeterPanel(input: display.readings.input, output: display.readings.output, compact: compact)
+        VisibleMeter(display: display) { readings in
+            MeterPanel(input: readings.input, output: readings.output, compact: compact)
+        }
     }
 }
 
 struct MeterSignalWarning: View {
-    @ObservedObject var display: MeterDisplay
+    let display: MeterDisplay
     let running: Bool
+    @State private var inputSignalMissing = false
 
     var body: some View {
-        if running && display.readings.inputSignalMissing {
-            Label("No input signal. Check the microphone's mute switch and selected channel. If using a MacBook microphone, open the lid.", systemImage: "mic.slash")
-                .font(.callout).foregroundStyle(.orange)
+        Group {
+            if running && inputSignalMissing {
+                Label("No input signal. Check the microphone's mute switch and selected channel. If using a MacBook microphone, open the lid.", systemImage: "mic.slash")
+                    .font(.callout).foregroundStyle(.orange)
+            }
         }
+        .onReceive(display.$readings.map(\.inputSignalMissing).removeDuplicates()) { inputSignalMissing = $0 }
     }
 }
 
 struct MenuOutputMeter: View {
-    @ObservedObject var display: MeterDisplay
+    let display: MeterDisplay
     var body: some View {
-        LevelMeterView(title: "Output", reading: display.readings.output, compact: true)
-            .padding(12)
-            .background(.background, in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
-struct MenuBarMeterLabel: View {
-    @ObservedObject var display: MeterDisplay
-    let running: Bool
-    @AppStorage("colourMenuMeter") private var colour = true
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Image(nsImage: statusImage)
-            .accessibilityLabel("MicLine")
-            .accessibilityValue(running
-                ? "Processing, output RMS \(Int(display.readings.output.rmsDBFS)) decibels full scale"
-                : "Stopped")
-            .help(running ? "MicLine · Processing · Output level" : "MicLine · Stopped")
-    }
-
-    private var statusImage: NSImage {
-        let level = running ? display.readings.output.rmsDBFS : -90
-        let symbol = running ? "mic.fill" : "mic.slash"
-        let foreground: NSColor = colour ? (colorScheme == .dark ? .white : .black) : .black
-        let coloured = colour
-        let image = NSImage(size: NSSize(width: 52, height: 18), flipped: false) { _ in
-            if let mic = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(paletteColors: [foreground])) {
-                mic.draw(in: NSRect(x: 0, y: 1, width: 13, height: 16))
-            }
-            let thresholds: [Double] = [-60, -48, -36, -24, -18, -12, -9, -3]
-            for (index, threshold) in thresholds.enumerated() {
-                let lit = level > -90 && level >= threshold
-                let zone: NSColor = threshold >= -9 ? .systemRed : threshold >= -18 ? .systemOrange : .systemGreen
-                (lit ? (coloured ? zone : foreground) : foreground.withAlphaComponent(0.24)).setFill()
-                NSBezierPath(roundedRect: NSRect(x: 18 + CGFloat(index) * 4,
-                    y: 4, width: 2.5, height: 10), xRadius: 1.25, yRadius: 1.25).fill()
-            }
-            return true
+        VisibleMeter(display: display) { readings in
+            LevelMeterView(title: "Output", reading: readings.output, compact: true)
+                .padding(12)
+                .background(.background, in: RoundedRectangle(cornerRadius: 10))
         }
-        image.isTemplate = !colour
-        return image
     }
 }

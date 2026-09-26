@@ -273,11 +273,13 @@ struct FixtureSettingsUnavailableView: View {
 }
 
 struct FixtureMenuView: View {
+    let openSettings: () -> Void
     var body: some View {
         Text("Presentation fixture · no audio")
         Text("Processing controls and Settings are unavailable")
             .foregroundStyle(.secondary)
         Divider()
+        OpenSettingsButton(action: openSettings)
         Button("Quit MicLine") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }

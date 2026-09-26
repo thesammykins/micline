@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct MicLineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var graph: AudioGraph
+    @StateObject private var menuBar: MenuBarController
     @AppStorage("appearance") private var appearance = "system"
     @State private var didProbe = false
     @State private var didAttemptStartup = false
@@ -45,82 +46,87 @@ struct MicLineApp: App {
         } else {
             defaults = .standard
         }
-        _graph = StateObject(wrappedValue: AudioGraph(defaults: defaults))
+        let graph = AudioGraph(defaults: defaults)
+        _graph = StateObject(wrappedValue: graph)
+        _menuBar = StateObject(wrappedValue: MenuBarController(graph: graph,
+            fixture: PresentationFixture.current, defaults: defaults))
     }
 
     var body: some Scene {
         Window("MicLine", id: "main") {
-            if let fixture {
-                if fixture == .stopped {
-                    ProductionStoppedFixtureView(graph: graph)
-                        .defaultAppStorage(presentationDefaults)
-                } else if fixture == .effects {
-                    ProductionEffectsFixtureView(graph: graph)
-                        .defaultAppStorage(presentationDefaults)
-                } else if fixture == .onboarding {
-                    ProductionOnboardingFixtureView(graph: graph)
-                        .defaultAppStorage(presentationDefaults)
-                } else if fixture == .measurement {
-                    ProductionMeasurementFixtureView(graph: graph)
-                        .defaultAppStorage(presentationDefaults)
-                } else if fixture == .genericControls {
-                    ProductionGenericControlsFixtureView(graph: graph)
-                        .defaultAppStorage(presentationDefaults)
-                } else {
-                    PresentationFixtureView(fixture: fixture)
-                }
-            } else if CommandLine.arguments.contains("--preview-missing-blackhole") {
-                VStack(alignment: .leading) {
-                    Text("Setup preview · simulated missing device").font(.caption).foregroundStyle(.secondary)
-                    ScrollView { AudioSetupView(graph: graph, previewMissing: true) }
-                }.padding(24).frame(width: 620, height: 650)
-            } else {
-                MainView(graph: graph)
-                    .onChange(of: appearance, initial: true) { _, value in
-                        NSApp.appearance = value == "dark" ? NSAppearance(named: .darkAqua)
-                            : value == "light" ? NSAppearance(named: .aqua) : nil
+            Group {
+                if let fixture {
+                    if fixture == .stopped {
+                        ProductionStoppedFixtureView(graph: graph)
+                            .defaultAppStorage(presentationDefaults)
+                    } else if fixture == .effects {
+                        ProductionEffectsFixtureView(graph: graph)
+                            .defaultAppStorage(presentationDefaults)
+                    } else if fixture == .onboarding {
+                        ProductionOnboardingFixtureView(graph: graph)
+                            .defaultAppStorage(presentationDefaults)
+                    } else if fixture == .measurement {
+                        ProductionMeasurementFixtureView(graph: graph)
+                            .defaultAppStorage(presentationDefaults)
+                    } else if fixture == .genericControls {
+                        ProductionGenericControlsFixtureView(graph: graph)
+                            .defaultAppStorage(presentationDefaults)
+                    } else {
+                        PresentationFixtureView(fixture: fixture)
                     }
-                    .task {
-                        NSApp.activate(ignoringOtherApps: true)
-                        if CommandLine.arguments.contains("--probe"), !didProbe {
-                            didProbe = true
-                            Task { await runProbe(graph) }
-                        } else if !CommandLine.arguments.contains("--probe"), !didAttemptStartup {
-                            didAttemptStartup = true
-                            if UserDefaults.standard.bool(forKey: "completedSetup"),
-                               (UserDefaults.standard.object(forKey: "startProcessingOnLaunch") as? Bool ?? true) {
-                                graph.enableAutomaticProcessing()
+                } else if CommandLine.arguments.contains("--preview-missing-blackhole") {
+                    VStack(alignment: .leading) {
+                        Text("Setup preview · simulated missing device").font(.caption).foregroundStyle(.secondary)
+                        ScrollView { AudioSetupView(graph: graph, previewMissing: true) }
+                    }.padding(24).frame(width: 620, height: 650)
+                } else {
+                    MainView(graph: graph)
+                        .onChange(of: appearance, initial: true) { _, value in
+                            NSApp.appearance = value == "dark" ? NSAppearance(named: .darkAqua)
+                                : value == "light" ? NSAppearance(named: .aqua) : nil
+                        }
+                        .task {
+                            NSApp.activate(ignoringOtherApps: true)
+                            if CommandLine.arguments.contains("--probe"), !didProbe {
+                                didProbe = true
+                                Task { await runProbe(graph) }
+                            } else if !CommandLine.arguments.contains("--probe"), !didAttemptStartup {
+                                didAttemptStartup = true
+                                if UserDefaults.standard.bool(forKey: "completedSetup"),
+                                   (UserDefaults.standard.object(forKey: "startProcessingOnLaunch") as? Bool ?? true) {
+                                    graph.enableAutomaticProcessing()
+                                }
                             }
                         }
-                    }
+                }
             }
+            .background(MenuBarActions(controller: menuBar))
         }
         .defaultSize(width: 720, height: 680)
         .defaultLaunchBehavior(.presented)
         .restorationBehavior(.disabled)
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { menuBar.showSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+        }
 
         Settings {
-            if fixture == nil { SettingsRootView(graph: graph) }
-            else { FixtureSettingsUnavailableView() }
-        }
-
-        MenuBarExtra {
-            if fixture == nil {
-                MenuView(graph: graph)
-            } else {
-                FixtureMenuView()
+            Group {
+                if fixture == nil { SettingsRootView(graph: graph) }
+                else { FixtureSettingsUnavailableView() }
             }
-        } label: {
-            MenuBarMeterLabel(display: graph.meterDisplay, running: fixture == nil && graph.running)
+            .background(SettingsWindowRegistration(controller: menuBar))
         }
-        .menuBarExtraStyle(.window)
     }
 }
 
 struct MenuView: View {
     @ObservedObject var graph: AudioGraph
-    @Environment(\.openWindow) private var openWindow
+    let openMain: () -> Void
+    let openSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -158,11 +164,11 @@ struct MenuView: View {
             if let issue = graph.routeIssue { Text(issue).font(.caption).foregroundStyle(.orange) }
             Divider()
             HStack {
-                Button { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) } label: {
+                Button(action: openMain) {
                     Image(systemName: "macwindow")
                 }.help("Open MicLine").accessibilityLabel("Open MicLine")
                 Spacer()
-                SettingsLink { Image(systemName: "gearshape") }.help("Settings")
+                OpenSettingsButton(action: openSettings)
                 Button { graph.shutdown(); NSApp.terminate(nil) } label: { Image(systemName: "power") }
                     .help("Quit MicLine and stop microphone access").accessibilityLabel("Quit MicLine")
                     .keyboardShortcut("q")
@@ -174,6 +180,18 @@ struct MenuView: View {
     private var outputChannels: String {
         graph.selectedOutput?.outputChannels == 1 ? "Channel 1"
             : "Channels \(graph.selectedOutputChannel + 1)-\(graph.selectedOutputChannel + 2)"
+    }
+}
+
+struct OpenSettingsButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "gearshape")
+        }
+        .help("Settings")
+        .accessibilityLabel("Settings")
     }
 }
 

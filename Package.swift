@@ -36,6 +36,7 @@ let package = Package(
         ),
         .executableTarget(name: "MicLineMeasure", dependencies: ["MicLineCore"]),
         .testTarget(name: "MicLineCoreTests", dependencies: ["MicLineCore", "AudioSupport"]),
+        .testTarget(name: "MicLineAppTests", dependencies: ["MicLine", "MicLineCore"]),
         .testTarget(name: "MicLineUITests", dependencies: ["MicLineUI"]),
         .testTarget(name: "MicLineUpdaterSupportTests", dependencies: ["MicLineUpdaterSupport"]),
     ],
